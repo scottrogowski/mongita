@@ -27,6 +27,18 @@ class AWSEngine(Engine):
         return True
 
     def download_doc(self, location):
+        CacheControl
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.get_object
+        # IfModifiedSince for avoiding unneccessary round trips to get the index or other items
+        # IfNoneMatch (string) -- Return the object only if its entity tag (ETag) is different from the one specified, otherwise return a 304 (not modified).
+        # There is no way to get whether the bucket has been modified so what we
+        # really need to do is update the metadata on every insert operation
+        # regardless of whether an index exists or not.
+        # then, other clients can check the metadata first.
+
+        # question is still how to manage everything with updating the index / etc.
+        # I don't see a way to do it without a lock file. We should get a lock on
+        # every insert.
         blob = self.bucket.blob(location.path)
         blob.reload()
 

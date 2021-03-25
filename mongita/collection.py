@@ -119,6 +119,12 @@ def _doc_matches_filter(doc, filter):
 
 
 def _doc_ids_match_filter_in_idx(idx, filter_v):
+    """
+    :param idx
+    """
+    # sortedcontainers.SortedDict
+    # functools.reduce(operator.iconcat, (weights[el] for el in weights.irange(None,8)))
+
     if isinstance(filter_v, dict):
         idx_keys = list(idx.keys())
         for agg_k, agg_v in filter_v.items():
@@ -231,7 +237,7 @@ class Collection():
             self._engine.create_path(self._base_location)
             metadata = {
                 'options': {},
-                'indexes': [],
+                'indexes': {},
                 '_id': str(bson.ObjectId()),
             }
             self._engine.upload_doc(self._metadata_location, metadata)
@@ -341,16 +347,19 @@ class Collection():
         print('b')
         reg_filters = {}
         idx_filters = {}
+        indexes = self._get_metadata().get('indexes', {})
         for filter_k, filter_v in filter.items():
-            if self.database.indexes.find_one():
-                idx_filters[filter_k] = filter_v
+            if filter_k + '_1' in indexes:
+                idx_filters[filter_k + '_1'] = filter_v
+            elif filter_k + '_-1' in indexes:
+                idx_filters[filter_k + '_-1'] = filter_v
             else:
                 reg_filters[filter_k] = filter_v
 
         if idx_filters:
             doc_ids_from_all_idx_filters = []
-            for filter_k, filter_v in idx_filters.items():
-                doc_idx = self._engine.download_doc(self._index_loc(filter_k))
+            for idx_k, filter_v in idx_filters.items():
+                doc_idx = indexes[idx_k]
                 doc_ids = _doc_ids_match_filter_in_idx(doc_idx, filter_v)
                 if not doc_ids:
                     return
@@ -479,24 +488,19 @@ class Collection():
         uniq.discard(None)
         return list(uniq)
 
-    def _metadata(self):
-        try:
-            return self._engine.download_doc(self._metadata_location)
-        except MongitaError:
-            return {}
+    def _get_metadata(self):
+        return self._engine.download_doc(self._metadata_location) or {}
 
     def _update_indicies(self, documents):
-        metadata = self._metadata()
-        for idx_doc in metadata['indexes']:
+        metadata = self._get_metadata()
+        for idx_doc in metadata.get('indexes', {}).values():
             _update_idx_doc_from_new_documents(documents, idx_doc)
-        self.replace_one(
-            {'_id': metadata['_id']},
-            metadata)
+        self._engine.upload_doc(self._metadata_location, metadata)
 
     @support_alert
     def create_index(self, keys):
         if isinstance(keys, str):
-            keys = [(keys[0], ASCENDING)]
+            keys = [(keys, ASCENDING)]
         if not isinstance(keys, list) or keys == []:
             raise MongitaError("Unsupported keys parameter format %r. See the docs." % str(keys))
         if len(keys) > 1:
@@ -507,24 +511,45 @@ class Collection():
             if direction not in (ASCENDING, DESCENDING):
                 raise MongitaError("Index key direction must be either ASCENDING (1) or DESCENDING (-1). Not %r" % direction)
 
-        # TODO collection-level write lock
         key_str, direction = keys[0]
 
+        idx_name = f'{key_str}_{direction}'
         inx_doc = {
-            '_id': self.name + '.' + key_str,
+            '_id': idx_name,
             'key_str': key_str,
             'direction': direction,
             'idx': {},
         }
-        inx_doc = self._get_idx_doc_from_new_documents(self._find({}), inx_doc)
-        self.database._indicies.replace_one({'_id': inx_doc['_id']}, inx_doc)  # TODO replace_one
-        # TODO also add metadata to collection including adding this index to a list
+        idx_doc = _update_idx_doc_from_new_documents(list(self._find({})), inx_doc)
+
+        # TODO collection-level write lock
+        metadata = self._get_metadata()
+        metadata['indexes'][idx_name] = idx_doc
+        self._engine.upload_doc(self._metadata_location, metadata)
+        return idx_name
 
     @support_alert
     def drop_index(self, index_or_name):
-        # if not isinstance
-        #TODO https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html#pymongo.collection.Collection.drop_index
-        pass
+        if isinstance(index_or_name, (list, tuple)) \
+           and len(index_or_name) == 2 \
+           and isinstance(index_or_name[0], str) \
+           and isinstance(index_or_name[1], int):
+            index_or_name = f'{index_or_name[0]}_{index_or_name[1]}'
+        if not isinstance(index_or_name, str):
+            raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
+        try:
+            key, direction = index_or_name.split('_')
+            direction = int(direction)
+        except ValueError:
+            raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
+
+        metadata = self._get_metadata()
+        try:
+            del metadata['indexes'][index_or_name]
+        except KeyError:
+            pass
+        self._engine.upload_doc(self._metadata_location, metadata)
+
 
     @support_alert
     def delete_one(self, filter):

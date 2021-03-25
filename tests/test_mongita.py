@@ -11,6 +11,7 @@ sys.path.append(os.getcwd().split('/tests')[0])
 import mongita
 from mongita import (MongitaClientMemory, ASCENDING, DESCENDING, errors,
                      results, cursor, collection, command_cursor, database, engines)
+from mongita.common import Location
 
 TEST_DIR = 'mongita_unittest_storage'
 
@@ -656,20 +657,36 @@ def test_bad_import():
         mongita.mongodb_fictional_method()
 
 
-def test_indicies():
-    client, coll, imr = setup_many()
-    with pytest.raises(mongita.errors.MongitaError):
-        coll.create_index('')
-    with pytest.raises(mongita.errors.MongitaError):
-        coll.create_index(5)
-    with pytest.raises(mongita.errors.MongitaError):
-        coll.create_index([])
-    with pytest.raises(mongita.errors.MongitaError):
-        coll.create_index({'key': 1})
-    with pytest.raises(mongita.errors.MongitaError):
-        coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
+def test_common():
+    assert isinstance(repr(Location()), str)
+    assert Location(database='a', collection='b').path == 'a/b'
+    assert Location(database='a', collection='b', _id='c').path == 'a/b/c'
+    assert Location(database='a', _id='c').path == 'a/c'
+    assert Location(_id='c').path == 'c'
 
 
-    coll.create_index('name')
 
+# def test_indicies():
+#     client, coll, imr = setup_many()
+#     with pytest.raises(mongita.errors.MongitaError):
+#         coll.create_index('')
+#     with pytest.raises(mongita.errors.MongitaError):
+#         coll.create_index(5)
+#     with pytest.raises(mongita.errors.MongitaError):
+#         coll.create_index([])
+#     with pytest.raises(mongita.errors.MongitaError):
+#         coll.create_index({'key': 1})
+#     with pytest.raises(mongita.errors.MongitaError):
+#         coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
+#     with pytest.raises(mongita.errors.MongitaError):
+#         coll.create_index([('key', 2)])
 
+#     idx_name = coll.create_index('kingdom')
+#     assert idx_name == 'kingdom_1'
+#     assert coll.count_documents({'kingdom': 'mammal'}) == \
+#         sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
+#     assert coll.count_documents({'kingdom': 'reptile'}) == \
+#         sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile')
+#     assert coll.count_documents({'kingdom': 'fish'}) == 0
+
+#     coll.drop_index('kingdom_1')
