@@ -2,13 +2,13 @@ TODO mongita mascot
 
 "Mongita is to MongoDB as SQLite is to SQL"
 
-Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on the filesystem, in memory, or in cloud buckets ([AWS S3](https://aws.amazon.com/s3/) or [GCP Cloud Storage](https://cloud.google.com/storage)). 
+Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on the filesystem, in memory, or in [GCP Cloud Storage buckets](https://cloud.google.com/storage)). 
 
 *Mongita is very much a project*. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
 
 Applications:
 - Embedded database: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
-- Serverless storage: In many cases, maintaining a running database on the cloud is overkill. Mongita can store documents in AWS S3 or GCP Cloud Storage buckets. This allows you to have a database on the cloud without the cost and overhead of an actual database instance.
+- Serverless storage: In many cases, maintaining a running database on the cloud is overkill. Mongita can store documents in GCP Cloud Storage buckets. This allows you to have a database on the cloud without the cost and overhead of an actual database instance.
 - Unit testing: Mocking PyMongo/MongoDB is a pain. Worse, mocking can hide real bugs. By monkey-patching PyMongo with Mongita, unit tests can be more faithful while remaining isolated.
  
 Design goals:
@@ -26,17 +26,10 @@ In-memory and filesystem backed (MongitaClientLocal & MongitaClientMemory)1
 
     pip3 install mongita
 
-In-memory, filesystem, and S3 backed (MongitaClientAWS)
-
-    pip3 install mongita[aws]
-
-In-memory, filesystem, and Cloud Storage backed (MongitaClientGCP)
+In-memory, filesystem, and Cloud Storage backed (+ MongitaClientGCP)
 
     pip3 install mongita[gcp]
 
-All of the above
-
-    pip3 install mongita[all]
 
 ###  Hello world
 
@@ -76,7 +69,7 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
 
 #### Currently implemented classes / methods:
 
-MongitaClientMemory / MongitaClientLocal / MongitaClientAWS / MongitaClientGCP
+MongitaClientMemory / MongitaClientLocal / MongitaClientGCP
 - list_database_names
 - list_databases
 - drop_database
@@ -139,11 +132,13 @@ Results from a side-by-side comparison on the same machine (MacBook Pro mid-2016
 ### Contributing
 
 Mongita is an *excellent* project for open source contributors. There is a lot to do and it is easy to get started. In particular, the following tasks are high in priority:
-- More [update operators](https://docs.mongodb.com/manual/reference/operator/update/#id1). Currently, only $set and $inc are implemented
-- More [query operators](https://docs.mongodb.com/manual/reference/operator/query/). Currently, only the comparison operators are implemented
-- find_one_and_... methods
-- (Aggregation pipelines)[https://docs.mongodb.com/manual/reference/command/aggregate/]
-- More (cursor methods)[https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html]. Currently only sort is implemented.
+- More [update operators](https://docs.mongodb.com/manual/reference/operator/update/#id1). Currently, only $set and $inc are implemented.
+- More [query operators](https://docs.mongodb.com/manual/reference/operator/query/). Currently, only the "comparison operators" are implemented.
+- find_one_and_... methods.
+- (Aggregation pipelines)[https://docs.mongodb.com/manual/reference/command/aggregate/].
+- More (cursor methods)[https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html]. Currently only sort, next, and limit are implemented.
+
+I would also like to add an S3 MongitaClient but that would require S3 to support something like GCP Cloud Storage's ["generations"](https://cloud.google.com/storage/docs/generations-preconditions). Generations allow for conditional PUTs to avoid overwriting objects in race conditions. It might also be possible for a clever developer to implement a lockfile mechanism using of objects. Specifically, I think it might be possible to "obtain" a lock by deleting an object and "release" it by putting it back.
 
 ### License
 
@@ -151,16 +146,15 @@ BSD 3-clause. Mongita is free and open source for any purpose with basic restric
 
 ### History
 
-Mongita was started as a component of the [fastmap server](https://github.com/fastmap-io). [Fastmap](https://fastmap.io) offloads and parallelizes arbitrary Python functions on the cloud.  When not being used, a design goal of the fastmap cluster is scale to as close to $0 as possible. Since a running database costs $30+ per month, having a database was not an option. Mongita was designed to solve this challenge.
+Mongita was started as a component of the [fastmap server](https://github.com/fastmap-io). [Fastmap](https://fastmap.io) offloads and parallelizes arbitrary Python functions on the cloud.  A design goal of the fastmap project is for clusters to scale to 0 when not in use to avoid cloud charges. Since a running database costs $30+ per month, using a "real" database was not an option. Mongita was designed to solve this challenge.
 
-### Alternatives
+### Comparison / alternatives
 
-This list has these requirements:
-- Embedded/serverless database
-- Document-style NoSQL
-- Written in Python or has Python bindings
+Every project in this table is an embedded, document-oriented database with Python support.
 
-- UNQLITE: document database and key/value store. Written in C and comes with Python bindings https://unqlite.org/
-- TinyDB: document database with an emphasis on minimalism. Written in Pythonhttps://pypi.org/project/tinydb/
-- BlitzDB: document database with a flexible data format and rich querying. Written in Python https://blitzdb.readthedocs.io/en/latest/
-- shelve: Python standard library option. Supports syncing dictionary objects to a file https://docs.python.org/3/library/shelve.html.
+| Project | 100% Python | MongoDB compatible | Distributed | 1k+ stars
+---------------------------------------------------------
+[Mongita](https://github.com/scottrogowski/Mongita)  | ✅ | ✅ | ✅ | 🚫
+[UNQLITE](https://unqlite.org/)                      | 🚫 | 🚫 | 🚫 | ✅
+[TinyDB](https://pypi.org/project/tinydb/)           | ✅ | 🚫 | 🚫 | ✅
+[BlitzDB](https://blitzdb.readthedocs.io/en/latest/) | ✅ | 🚫 | 🚫 | 🚫

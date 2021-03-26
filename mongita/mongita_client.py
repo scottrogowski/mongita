@@ -11,10 +11,6 @@ from .database import Database
 from .errors import MongitaError, MongitaNotImplementedError
 from .engines import local_engine, memory_engine
 try:
-    from .engines import aws_engine
-except ImportError:
-    aws_engine = None
-try:
     from .engines import gcp_engine
 except ImportError:
     gcp_engine = None
@@ -79,18 +75,6 @@ class MongitaClient(abc.ABC):
         location = Location(database=db)
         self.engine.delete_dir(location)
         del self._cache[db]
-
-
-class MongitaClientAWS(MongitaClient):
-    def __init__(self, bucket='mongita_storage'):
-        if not aws_engine:
-            raise ImportError("Error importing the AWSEngine. Try installing AWS dependencies `pip install mongita[AWS]`")
-        self.engine = aws_engine.AWSEngine(bucket)
-        super().__init__()
-
-    def __repr__(self):
-        url = "https://%s.s3.amazonaws.com/" % self.engine.bucket.name
-        return "MongitaClient(storage=AWS url=%s)" % url
 
 
 class MongitaClientGCP(MongitaClient):
