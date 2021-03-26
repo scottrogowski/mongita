@@ -22,7 +22,7 @@ def support_alert(func):
     def inner(*args, **kwargs):
         for k in kwargs:
             if k not in func.__code__.co_varnames:
-                raise MongitaError("The argument %r is not supported by %r in mongita. "
+                raise MongitaError("The argument %r is not supported by %r in Mongita. "
                                    "This may or may not be supported in PyMongo. "
                                    "If it is, you can help implement it." %
                                    k, func)

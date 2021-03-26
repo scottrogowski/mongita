@@ -3,7 +3,7 @@ import bson
 from .collection import Collection
 from .command_cursor import CommandCursor
 from .common import support_alert, Location, ok_name
-from .errors import MongitaNotImplementedError, MongitaError
+from .errors import MongitaNotImplementedError, InvalidName
 
 
 class Database():
@@ -35,7 +35,7 @@ class Database():
             return self._cache[collection_name]
         except KeyError:
             if not ok_name(collection_name):
-                raise MongitaError("Collection cannot be named %r." % collection_name)
+                raise InvalidName("Collection cannot be named %r." % collection_name)
             coll = Collection(collection_name, self)
             self._cache[collection_name] = coll
             return coll

@@ -19,5 +19,17 @@ class MongitaNotImplementedError(MongitaError, NotImplementedError):
         return MongitaNotImplementedError(msg)
 
 
+class InvalidName(MongitaError):
+    pass
+
+
 class InvalidOperation(MongitaError):
     pass
+
+
+class OperationFailure(MongitaError):
+    pass
+
+
+# For pymongo compatibility - especially in unit tests
+PyMongoError = MongitaError

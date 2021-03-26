@@ -116,7 +116,7 @@ def test_insert_one():
 
     # already exists
     doc = coll.find_one()
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.insert_one(doc)
 
 
@@ -124,7 +124,7 @@ def test_insert_many():
     client, coll, imr = setup_many()
     with pytest.raises(TypeError):
         coll.insert_many()
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.insert_many({'doc': 'doc'})
     assert isinstance(imr, results.InsertManyResult)
     assert isinstance(repr(imr), str)
@@ -157,15 +157,15 @@ def test_count_documents_one():
 
 def test_find_one():
     client, coll, imr = setup_many()
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.find_one(['hi'])
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.find_one({'weight': {'$bigger': 7}})
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.find_one({'weight': {'$bigger': 7}})
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.find_one({'weight': {'bigger': 7}})
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.find_one({5: 'hi'})
 
     doc = coll.find_one()
@@ -194,7 +194,7 @@ def test_find_one():
     doc = coll.find_one({'family': 'Herpestidae', 'weight': {'$gt': 20}})
     assert not doc
 
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         doc = coll.find_one({'_id': 5})
 
 
@@ -245,7 +245,7 @@ def test_cursor():
     assert coll.find().next()['name'] == TEST_DOCS[0]['name']
 
     # not asc or desc
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         list(coll.find().sort('weight', 2))
 
     sorted_docs = list(coll.find().sort('weight'))
@@ -300,9 +300,9 @@ def test_cursor():
         doc_cursor.sort('kingdom')
 
     # test bad format
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.find().sort('kingdom', ASCENDING, True)
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.find().sort([(ASCENDING, 'kingdom')])
 
 
@@ -354,7 +354,7 @@ def test_replace_one():
     # upsert an existing document
     fake_mongoose = coll.find_one({'name': 'Fake Mongoose'})
     assert fake_mongoose
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         ur = coll.replace_one({'name': 'Other mongoose'},
                               fake_mongoose,
                               upsert=True)
@@ -362,7 +362,7 @@ def test_replace_one():
 
 def test_filters():
     client, coll, imr = setup_many()
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.find({'kingdom': {'$bigger': 'bird'}})
 
     assert coll.count_documents({'weight': {'$eq': 4}}) == 1
@@ -381,25 +381,25 @@ def test_filters():
            set(d['name'] for d in TEST_DOCS if d['kingdom'] in ['reptile', 'bird'])
     assert set(d['name'] for d in coll.find({'kingdom': {'$nin': ['reptile', 'bird']}})) == \
            set(d['name'] for d in TEST_DOCS if d['kingdom'] not in ['reptile', 'bird'])
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         list(coll.find({'kingdom': {'$in': 'bird'}}))
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         list(coll.find({'kingdom': {'$in': 5}}))
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         list(coll.find({'kingdom': {'$in': None}}))
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         list(coll.find({'kingdom': {'$nin': 'bird'}}))
 
 
 def test_update_one():
     client, coll, imr = setup_many()
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.update_one({}, {}, upsert=True)
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.update_one({}, {'name': 'Mongooose'})
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.update_one({}, ['name', 'Mongooose'])
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.update_one({}, {'$set': ['name', 'Mongooose']})
     ur = coll.update_one({}, {'$set': {'name': 'Mongooose'}})
     assert isinstance(ur, results.UpdateResult)
@@ -446,17 +446,17 @@ def test_update_one():
     # corner case updating ids must be strings
     coll.update_one({'name': 'fake'}, {'$set': {'_id': 'uniqlo'}})
     coll.update_one({'name': 'fake'}, {'$set': {'_id': bson.ObjectId()}})
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
 
 
 def test_update_many():
     client, coll, imr = setup_many()
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.update_many({}, {}, upsert=True)
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.update_many({}, {'name': 'Mongooose'})
 
     ur = coll.update_many({}, {'$set': {'name': 'Mongooose'}})
@@ -482,7 +482,7 @@ def test_update_many():
 
 def test_distinct():
     client, coll, imr = setup_many()
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.distinct(5)
     dist = coll.distinct('name')
     assert isinstance(dist, list)
@@ -544,17 +544,17 @@ def test_delete_many():
 def test_basic_validation():
     client, coll, imr = setup_many()
 
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.insert_one('')
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.insert_one('blah')
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.insert_one([])
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.insert_one(['sdasd'])
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.insert_one([{'a': 'b'}])
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         coll.insert_one({'_id': 5, 'param': 'param'})
 
 
@@ -580,7 +580,7 @@ def test_database():
     assert db.list_collection_names() == ['snake_hunter']
     cc = db.list_collections()
     assert isinstance(cc, command_cursor.CommandCursor)
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         cc.batch_size()
     with pytest.raises(AttributeError):
         cc.not_real_attr()
@@ -606,11 +606,11 @@ def test_database():
     with pytest.raises(errors.MongitaNotImplementedError):
         db.dereference()
 
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         db['$reserved']
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         db['system.']
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         db['']
 
 
@@ -644,11 +644,11 @@ def test_client():
     with pytest.raises(errors.MongitaNotImplementedError):
         client.close_cursor()
 
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         client['$reserved']
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         db['system.']
-    with pytest.raises(errors.MongitaError):
+    with pytest.raises(errors.PyMongoError):
         client['']
 
 
@@ -677,17 +677,17 @@ def test_common():
 
 # def test_indicies():
 #     client, coll, imr = setup_many()
-#     with pytest.raises(mongita.errors.MongitaError):
+#     with pytest.raises(mongita.errors.PyMongoError):
 #         coll.create_index('')
-#     with pytest.raises(mongita.errors.MongitaError):
+#     with pytest.raises(mongita.errors.PyMongoError):
 #         coll.create_index(5)
-#     with pytest.raises(mongita.errors.MongitaError):
+#     with pytest.raises(mongita.errors.PyMongoError):
 #         coll.create_index([])
-#     with pytest.raises(mongita.errors.MongitaError):
+#     with pytest.raises(mongita.errors.PyMongoError):
 #         coll.create_index({'key': 1})
-#     with pytest.raises(mongita.errors.MongitaError):
+#     with pytest.raises(mongita.errors.PyMongoError):
 #         coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
-#     with pytest.raises(mongita.errors.MongitaError):
+#     with pytest.raises(mongita.errors.PyMongoError):
 #         coll.create_index([('key', 2)])
 
 #     idx_name = coll.create_index('kingdom')

@@ -82,7 +82,10 @@ Cursor
 - limit
 
 errors
-- MongitaError
+- MongitaError 
+- PyMongoError (alias of MongitaError)
+- InvalidOperation
+- OperationFailure
 - MongitaNotImplementedError
 
 results

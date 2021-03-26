@@ -8,7 +8,7 @@ import bson
 from .common import support_alert, Location, ok_name
 from .command_cursor import CommandCursor
 from .database import Database
-from .errors import MongitaError, MongitaNotImplementedError
+from .errors import MongitaNotImplementedError, InvalidName
 from .engines import local_engine, memory_engine
 
 
@@ -31,7 +31,7 @@ class MongitaClient(abc.ABC):
             return self._cache[db_name]
         except KeyError:
             if not ok_name(db_name):
-                raise MongitaError("Database cannot be named %r." % db_name)
+                raise InvalidName("Database cannot be named %r." % db_name)
             db = Database(db_name, self)
             self._cache[db_name] = db
             return db
