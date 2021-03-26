@@ -35,11 +35,6 @@ setuptools.setup(
     ],
     python_requires='>=3.6',
     install_requires=[
-        'bson>=0.5,<0.6'
+        'pymongo>=3.11,<4.0'
     ],
-    extras_require={
-        'aws': ['boto>=2.49,<3.0'],
-        'gcp': ['google-cloud-storage>1.36,<=2.0'],
-        'all': ['boto>=2.49,<3.0', 'google-cloud-storage>1.36,<=2.0'],
-    }
 )

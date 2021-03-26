@@ -36,7 +36,7 @@ class LocalEngine(Engine):
 
     def upload_doc(self, location, doc, generation=None):
         full_path = self._get_full_path(location)
-        data = bson.dumps(doc)
+        data = bson.encode(doc)
 
         print("uploading", location, doc, generation)
 
@@ -72,7 +72,7 @@ class LocalEngine(Engine):
             doc = f.read()
             fcntl.lockf(f, fcntl.LOCK_UN)
 
-        so = StorageObject(bson.loads(doc), generation)
+        so = StorageObject(bson.decode(doc), generation)
         self._cache[location] = so
         return so
 

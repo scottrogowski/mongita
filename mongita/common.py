@@ -42,7 +42,7 @@ class Location():
         self.database = database
         self.collection = collection
         self._id = _id
-        self.path = '/'.join(filter(None, (database, collection, _id)))
+        self.path = '/'.join(filter(None, (database, collection, _id and str(_id))))
 
     # @staticmethod
     # def from_path(self, path):
@@ -56,7 +56,7 @@ class Location():
 
     def is_in_collection(self, collection_location):
         return (self.is_in_collection_incl_metadata(collection_location)
-                and not self._id.startswith('$'))
+                and not str(self._id).startswith('$'))
 
     def is_in_collection_incl_metadata(self, collection_location):
         return (self.database == collection_location.database

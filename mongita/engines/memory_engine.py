@@ -8,7 +8,7 @@ class MemoryEngine(Engine):
         self._storage = {}
 
     def upload_doc(self, location, doc, generation=None):
-        self._storage[location] = bson.dumps(doc)
+        self._storage[location] = bson.encode(doc)
         return True
 
     def download_doc(self, location):
@@ -16,7 +16,7 @@ class MemoryEngine(Engine):
             obj = self._storage[location]
         except KeyError:
             return None
-        return StorageObject(bson.loads(obj), None)
+        return StorageObject(bson.decode(obj), None)
 
     def doc_exists(self, location):
         return location in self._storage

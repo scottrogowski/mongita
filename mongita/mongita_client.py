@@ -10,10 +10,6 @@ from .command_cursor import CommandCursor
 from .database import Database
 from .errors import MongitaError, MongitaNotImplementedError
 from .engines import local_engine, memory_engine
-try:
-    from .engines import gcp_engine
-except ImportError:
-    gcp_engine = None
 
 
 class MongitaClient(abc.ABC):
@@ -75,18 +71,6 @@ class MongitaClient(abc.ABC):
         location = Location(database=db)
         self.engine.delete_dir(location)
         del self._cache[db]
-
-
-class MongitaClientGCP(MongitaClient):
-    def __init__(self, bucket='mongita_storage'):
-        if not gcp_engine:
-            raise ImportError("Error importing the GCPEngine. Try installing GCP dependencies `pip install mongita[GCP]`")
-        self.engine = gcp_engine.GCPEngine(bucket)
-        super().__init__()
-
-    def __repr__(self):
-        url = "https://storage.googleapis.com/" + self.engine.bucket
-        return "MongitaClient(storage=GCP url=%s)" % url
 
 
 class MongitaClientLocal(MongitaClient):

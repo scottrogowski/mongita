@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import sys
 import shutil
@@ -23,6 +23,7 @@ TEST_DOCS = [
         'name': 'Meercat',
         'family': 'Herpestidae',
         'kingdom': 'mammal',
+        'spotted': datetime(1994, 4, 23),
         'weight': 0.75,
         'continents': ['AF'],
     },
@@ -30,6 +31,7 @@ TEST_DOCS = [
         'name': 'Indian grey mongoose',
         'family': 'Herpestidae',
         'kingdom': 'mammal',
+        'spotted': datetime(2003, 12, 1),
         'weight': 1.4,
         'continents': ['EA'],
     },
@@ -37,6 +39,7 @@ TEST_DOCS = [
         'name': 'Honey Badger',
         'family': 'Mustelidae',
         'kingdom': 'mammal',
+        'spotted': datetime(1987, 2, 13),
         'weight': 10,
         'continents': ['EA', 'AF'],
     },
@@ -44,6 +47,7 @@ TEST_DOCS = [
         'name': 'King Cobra',
         'family': 'Elapidae',
         'kingdom': 'reptile',
+        'spotted': datetime(1997, 2, 22),
         'weight': 6,
         'continents': ['EA'],
     },
@@ -51,6 +55,7 @@ TEST_DOCS = [
         'name': 'Secretarybird',
         'family': 'Sagittariidae',
         'kingdom': 'bird',
+        'spotted': datetime(1992, 7, 3),
         'weight': 4,
         'continents': ['AF'],
     },
@@ -58,6 +63,7 @@ TEST_DOCS = [
         'name': 'Human',
         'family': 'Hominidae',
         'kingdom': 'mammal',
+        'spotted': datetime(2021, 3, 25),
         'weight': 70,
         'continents': ['NA', 'SA', 'EA', 'AF']
     }
@@ -89,7 +95,7 @@ def test_insert_one():
         coll.insert_one({'doc': 'doc'}, bypass_document_validation=True)
     assert isinstance(ior, results.InsertOneResult)
     assert isinstance(repr(ior), str)
-    assert len(ior.inserted_id) == len(str(bson.ObjectId()))
+    assert isinstance(ior.inserted_id, bson.ObjectId)
     assert coll.count_documents({}) == 1
     assert coll.count_documents({'_id': ior.inserted_id}) == 1
     assert coll.find_one()['_id'] == ior.inserted_id
@@ -165,6 +171,8 @@ def test_find_one():
     doc = coll.find_one()
     assert doc['name'] == 'Meercat'
     assert isinstance(doc['continents'], list)
+    print(doc['_id'])
+    assert isinstance(doc['_id'], bson.objectid.ObjectId)
     del doc['_id']
     assert doc == TEST_DOCS[0]
 
@@ -196,7 +204,7 @@ def test_find():
     assert isinstance(doc_cursor, cursor.Cursor)
     docs = list(doc_cursor)
     assert len(docs) == LEN_TEST_DOCS
-    assert all(doc.get('_id') for doc in docs)
+    assert all(isinstance(doc['_id'], bson.objectid.ObjectId) for doc in docs)
     docs = list(coll.find())
     assert docs[0]['name'] == 'Meercat'
     assert docs[-1]['name'] == 'Human'
@@ -297,11 +305,11 @@ def test_cursor():
     with pytest.raises(errors.MongitaError):
         coll.find().sort([(ASCENDING, 'kingdom')])
 
+
 def test_limit():
     client, coll, imr = setup_many()
     with pytest.raises(TypeError):
         coll.find().limit(2.0)
-
 
     assert len(list(coll.find().limit(0))) == 0
     assert len(list(coll.find().limit(3))) == 3
@@ -315,6 +323,7 @@ def test_limit():
     next(doc_cursor)
     with pytest.raises(errors.InvalidOperation):
         doc_cursor.limit(2)
+
 
 def test_replace_one():
     client, coll, imr = setup_many()
@@ -339,7 +348,7 @@ def test_replace_one():
                           upsert=True)
     assert ur.matched_count == 0
     assert ur.modified_count == 1
-    assert ur.upserted_id and isinstance(ur.upserted_id, str)
+    assert ur.upserted_id and isinstance(ur.upserted_id, bson.ObjectId)
     assert coll.count_documents({'name': 'Fake Mongoose'}) == 1
 
     # upsert an existing document

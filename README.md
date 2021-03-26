@@ -1,67 +1,49 @@
 TODO mongita mascot
 
-"Mongita is to MongoDB as SQLite is to SQL"
+Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on the filesystem or simply in memory.
 
-Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on the filesystem, in memory, or in [GCP Cloud Storage buckets](https://cloud.google.com/storage)). 
+| "Mongita is to MongoDB as SQLite is to SQL"
 
 *Mongita is very much a project*. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
 
 Applications:
 - Embedded database: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
-- Serverless storage: In many cases, maintaining a running database on the cloud is overkill. Mongita can store documents in GCP Cloud Storage buckets. This allows you to have a database on the cloud without the cost and overhead of an actual database instance.
 - Unit testing: Mocking PyMongo/MongoDB is a pain. Worse, mocking can hide real bugs. By monkey-patching PyMongo with Mongita, unit tests can be more faithful while remaining isolated.
  
 Design goals:
-- MongoDB compatibility: Mongita implements a commonly used subset of the PyMongo API. This allows projects to be started with Mongita and later upgraded to MongoDB once they reach an appropriate scale.
-- Truly serverless: Mongita does not require a server or run a process. It is just a Python library import - much like SQLite.
-- Limited dependencies: Mongita runs anywhere that Python runs. Currently there are no dependencies for the core library and there will never be any compiled dependencies.
+- MongoDB compatibility: Mongita implements a commonly-used subset of the PyMongo API. This allows projects to be started with Mongita and later upgraded to MongoDB once they reach an appropriate scale.
+- Embedded/self-contained: Mongita does not require a server or run a process. It is just a Python library import - much like SQLite.
+- Thread and process safe: Mongita avoids race conditions by isolating certain document modification operations.
+- Limited dependencies: Mongita runs anywhere that Python runs. Currently the only dependency is PyMongo (for bson).
 
 When NOT to use Mongita:
-- You need extreme speed: Mongita is fast enough for most use cases. If you are dealing with hundreds of transactions per second, you probably want to use a standard MongoDB server.
+- You need extreme speed: Mongita is fast enough for most use cases. If you are dealing with hundreds of transactions per second on your local machine, you probably want to use a standard MongoDB server.
 - You run a lot of uncommon commands: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
 
 ### Installation
 
-In-memory and filesystem backed (MongitaClientLocal & MongitaClientMemory)1
-
     pip3 install mongita
-
-In-memory, filesystem, and Cloud Storage backed (+ MongitaClientGCP)
-
-    pip3 install mongita[gcp]
-
 
 ###  Hello world
 
     >>> from mongita import MongitaClientLocal
     >>> client = MongitaClientLocal()
-    >>> db = client.hello_world_db
-    >>> coll = db.common_phrases
-    >>> coll.insert_many([{'phrase_id': 1, 'hello': 'world'}, {'phrase_id': 2, 'foo': 'bar'})
+    >>> hello_world_db = client.hello_world_db
+    >>> mongoose_types = hello_world_db.mongoose_types
+    >>> mongoose_types.insert_many([{'name': 'Meercat', 'favorite_food', 'Worms'})
     InsertResult()
-    >>> coll.count_documents()
+    >>> mongoose_types.count_documents()
     2
-    >>> coll.update_one({'phrase_id': 1}, {'$set': {'hello': 'World!'}})
+    >>> mongoose_types.update_one({'phrase_id': 1}, {'$set': {'hello': 'World!'}})
     UpdateResult()
-    >>> coll.replace_one({'phrase_id': 1}, {'phrase_id': 1, 'HELLO': 'WORLD'}
+    >>> mongoose_types.replace_one({'phrase_id': 1}, {'phrase_id': 1, 'HELLO': 'WORLD'}
     ReplaceResult
-    >>> coll.find({'phrase_id': {'$gt': 1})
+    >>> mongoose_types.find({'phrase_id': {'$gt': 1})
     Cursor
     >>> list(coll.find({'phrase_id': {'$gt': 1}))
     [{'_id': 'a1b2c3d4e5f6', 'phrase_id': 2, 'foo': 'bar'}]
     >>> coll.delete_one({'phrase_id': 1})
     DropResult
-
-###  Importing / exporting from MongoDB
-
-# MongoDB -> Mongita
-$ mongodump --db my_db --uri mongodb://localhost:27017 --out /tmp/dump1
-$ mongitarestore --db my_db --dir /tmp/dump1 --out ~/.mongita_storage
-
-# Mongita -> MongoDB
-$ mongitadump --db db_2 --dir ~/.mongita_storage_2 --out /tmp/dump2
-$ mongorestore --db db_2 --dir /tmp/dump2 --uri mongodb://localhost:27017
-
 
 ### API
 
@@ -129,6 +111,8 @@ results
 
 Results from a side-by-side comparison on the same machine (MacBook Pro mid-2016)
 
+TODO memory / local / pymongo+mongodb
+
 ### Contributing
 
 Mongita is an *excellent* project for open source contributors. There is a lot to do and it is easy to get started. In particular, the following tasks are high in priority:
@@ -146,15 +130,4 @@ BSD 3-clause. Mongita is free and open source for any purpose with basic restric
 
 ### History
 
-Mongita was started as a component of the [fastmap server](https://github.com/fastmap-io). [Fastmap](https://fastmap.io) offloads and parallelizes arbitrary Python functions on the cloud.  A design goal of the fastmap project is for clusters to scale to 0 when not in use to avoid cloud charges. Since a running database costs $30+ per month, using a "real" database was not an option. Mongita was designed to solve this challenge.
-
-### Comparison / alternatives
-
-Every project in this table is an embedded, document-oriented database with Python support.
-
-| Project | 100% Python | MongoDB compatible | Distributed | 1k+ stars
----------------------------------------------------------
-[Mongita](https://github.com/scottrogowski/Mongita)  | ✅ | ✅ | ✅ | 🚫
-[UNQLITE](https://unqlite.org/)                      | 🚫 | 🚫 | 🚫 | ✅
-[TinyDB](https://pypi.org/project/tinydb/)           | ✅ | 🚫 | 🚫 | ✅
-[BlitzDB](https://blitzdb.readthedocs.io/en/latest/) | ✅ | 🚫 | 🚫 | 🚫
+Mongita was started as a component of the [fastmap server](https://github.com/fastmap-io). [Fastmap](https://fastmap.io) offloads and parallelizes arbitrary Python functions on the cloud.

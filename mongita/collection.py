@@ -20,11 +20,8 @@ def _validate_filter(filter):
             raise MongitaError("Filter keys must be strings, not %r" % type(filter))
     _id = filter.get('_id')
     if _id:
-        if isinstance(_id, bson.ObjectId):
-            _id = str(_id)
-            filter['_id'] = _id
-        if not isinstance(_id, (str, dict)):
-            raise MongitaError("If present, the filter _id must be a string or a dict")
+        if not isinstance(_id, (bson.ObjectId, str, dict)):
+            raise MongitaError("If present, the '_id' filter must be a bson ObjectId, string, or a dict")
     for filter_v in filter.values():
         if isinstance(filter_v, dict):
             for op in filter_v.keys():
@@ -48,11 +45,8 @@ def _validate_update(update):
             raise MongitaError("If present, the update operator must be a dict, not %r" % type(update_dict))
         _id = update_dict.get('_id')
         if _id:
-            if isinstance(_id, bson.ObjectId):
-                _id = str(_id)
-                update_dict['_id'] = _id
-            if not isinstance(_id, str):
-                raise MongitaError("The update _id must be a string")
+            if not isinstance(_id, (str, bson.ObjectId)):
+                raise MongitaError("The update _id must be a bson ObjectId or a string")
 
 
 def _validate_doc(doc):
@@ -60,11 +54,8 @@ def _validate_doc(doc):
         raise MongitaError("The document must be a dict, not %r" % type(doc))
     _id = doc.get('_id')
     if _id:
-        if isinstance(_id, bson.ObjectId):
-            _id = str(_id)
-            doc['_id'] = _id
-        if not isinstance(_id, str):
-            raise MongitaError("The document _id must be a string or not present")
+        if not isinstance(_id, (bson.ObjectId, str)):
+            raise MongitaError("The document _id must be a bson ObjectId, a string, or not present")
 
 
 def _doc_matches_agg(doc_v, agg):
@@ -238,7 +229,7 @@ class Collection():
             metadata = {
                 'options': {},
                 'indexes': {},
-                '_id': str(bson.ObjectId()),
+                '_id': bson.ObjectId(),
             }
             self._engine.upload_doc(self._metadata_location, metadata)
         self.database._create(self.name)
@@ -246,7 +237,7 @@ class Collection():
 
     def _insert_one(self, document):
         document = document.copy()
-        obj_id = str(document.get('_id', '') or bson.ObjectId())
+        obj_id = document.get('_id', '') or bson.ObjectId()
         document_location = self._get_location(obj_id)
         if self._engine.doc_exists(document_location):
             raise MongitaError("Document %r already exists" % obj_id)

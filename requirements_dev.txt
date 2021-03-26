@@ -1,0 +1,14 @@
+# Mongita requirements
+pymongo>=3.11,<4.0
+
+# Testing
+pytest>=6.0.2,<6.1
+coverage>4.5,<4.6  # downgraded for --concurrency flag
+
+# Benchmarking
+plotly>=4.14,<5.0
+pygount>=1.2,<2.0
+
+# Development
+ipdb>=0.13
+

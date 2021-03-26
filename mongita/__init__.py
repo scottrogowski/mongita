@@ -8,8 +8,6 @@ from . import results
 mongita_client = mongita_client
 MongitaClientMemory = mongita_client.MongitaClientMemory
 MongitaClientLocal = mongita_client.MongitaClientLocal
-MongitaClientGCP = mongita_client.MongitaClientGCP
-MongitaClientAWS = mongita_client.MongitaClientAWS
 
 database = database
 collection = collection
