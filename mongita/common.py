@@ -1,4 +1,7 @@
 import functools
+import json
+
+import bson
 
 from .errors import MongitaError
 
@@ -28,6 +31,40 @@ def support_alert(func):
                                    k, func)
         return func(*args, **kwargs)
     return inner
+
+
+class StorageObject(dict):
+    __slots__ = ['generation']
+
+    def __init__(self, doc, generation=0):
+        self.generation = generation
+        super().__init__(doc)
+
+    def to_bytes(self):
+        self.generation += 1
+        return bson.encode({'doc': self, 'generation': self.generation})
+
+    @staticmethod
+    def from_bytes(obj):
+        so = bson.decode(obj)
+        return StorageObject(so['doc'], so['generation'])
+
+
+class MetaStorageObject(dict):
+    def __init__(self, doc, generation=0):
+        self.generation = generation
+        super().__init__(doc)
+
+    def to_bytes(self):
+        self.generation += 1
+        print("to_bytes", self)
+        return json.dumps({'doc': self, 'generation': self.generation})
+
+    @staticmethod
+    def from_bytes(obj):
+        so = json.loads(obj)
+        print("from_bytes", so)
+        return MetaStorageObject(so['doc'], so['generation'])
 
 
 class Location():

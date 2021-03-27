@@ -1,11 +1,6 @@
 import abc
 
 
-class StorageObject(dict):
-    def __init__(self, doc, generation):
-        self.generation = generation
-        super().__init__(doc)
-
 
 class Engine(abc.ABC):
     """

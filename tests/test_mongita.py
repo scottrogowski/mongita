@@ -11,12 +11,14 @@ sys.path.append(os.getcwd().split('/tests')[0])
 import mongita
 from mongita import (MongitaClientMemory, ASCENDING, DESCENDING, errors,
                      results, cursor, collection, command_cursor, database, engines)
-from mongita.common import Location
+from mongita.common import Location, StorageObject
 
 TEST_DIR = 'mongita_unittest_storage'
 
 if os.path.exists(TEST_DIR):
     shutil.rmtree(TEST_DIR)
+
+# TODO test multi-level finds / inserts / etc
 
 TEST_DOCS = [
     {
@@ -40,7 +42,7 @@ TEST_DOCS = [
         'family': 'Mustelidae',
         'kingdom': 'mammal',
         'spotted': datetime(1987, 2, 13),
-        'weight': 10,
+        'weight': 10.0,
         'continents': ['EA', 'AF'],
     },
     {
@@ -48,7 +50,7 @@ TEST_DOCS = [
         'family': 'Elapidae',
         'kingdom': 'reptile',
         'spotted': datetime(1997, 2, 22),
-        'weight': 6,
+        'weight': 6.0,
         'continents': ['EA'],
     },
     {
@@ -56,7 +58,7 @@ TEST_DOCS = [
         'family': 'Sagittariidae',
         'kingdom': 'bird',
         'spotted': datetime(1992, 7, 3),
-        'weight': 4,
+        'weight': 4.0,
         'continents': ['AF'],
     },
     {
@@ -64,7 +66,7 @@ TEST_DOCS = [
         'family': 'Hominidae',
         'kingdom': 'mammal',
         'spotted': datetime(2021, 3, 25),
-        'weight': 70,
+        'weight': 70.0,
         'continents': ['NA', 'SA', 'EA', 'AF']
     }
 ]
@@ -74,13 +76,17 @@ LEN_TEST_DOCS = len(TEST_DOCS)
 def setup_one():
     client = MongitaClientMemory()
     coll = client.db.snake_hunter
-    return client, coll, coll.insert_one(TEST_DOCS[0])
+    ior = coll.insert_one(TEST_DOCS[0])
+    assert '_id' not in TEST_DOCS[0]
+    return client, coll, ior
 
 
 def setup_many():
     client = MongitaClientMemory()
     coll = client.db.snake_hunter
-    return client, coll, coll.insert_many(TEST_DOCS)
+    imr = coll.insert_many(TEST_DOCS)
+    assert not any(['_id' in d for d in TEST_DOCS])
+    return client, coll, imr
 
 
 def test_insert_one():
@@ -100,14 +106,14 @@ def test_insert_one():
     assert coll.count_documents({'_id': ior.inserted_id}) == 1
     assert coll.find_one()['_id'] == ior.inserted_id
 
-    td = TEST_DOCS[1]
+    td = dict(TEST_DOCS[1])
     td['_id'] = 'uniqlo'
     ior = coll.insert_one(td)
     assert ior.inserted_id == 'uniqlo'
     assert coll.count_documents({'_id': 'uniqlo'}) == 1
     assert coll.count_documents({}) == 2
 
-    td = TEST_DOCS[1]
+    td = dict(TEST_DOCS[1])
     td['_id'] = bson.ObjectId()
     ior = coll.insert_one(td)
     assert ior.inserted_id == td['_id']
@@ -129,6 +135,7 @@ def test_insert_many():
     assert isinstance(imr, results.InsertManyResult)
     assert isinstance(repr(imr), str)
     assert len(imr.inserted_ids) == LEN_TEST_DOCS
+    assert all(isinstance(_id, bson.ObjectId) for _id in imr.inserted_ids)
     assert coll.count_documents({}) == LEN_TEST_DOCS
     assert coll.count_documents({'_id': imr.inserted_ids[0]}) == 1
     assert coll.count_documents({'_id': {'$in': imr.inserted_ids}}) == LEN_TEST_DOCS
@@ -140,6 +147,7 @@ def test_insert_many():
     imr = coll.insert_many([{'_id': 5, 'reason': 'bad_id'}, {'this_doc_is': 'ok'},
                             'string_instead_of_doc'], ordered=False)
     assert len(imr.inserted_ids) == 1
+    assert isinstance(imr.inserted_ids[0], bson.ObjectId)
 
 
 def test_count_documents_one():
@@ -169,9 +177,9 @@ def test_find_one():
         coll.find_one({5: 'hi'})
 
     doc = coll.find_one()
+    assert isinstance(doc, dict) and not isinstance(doc, StorageObject)
     assert doc['name'] == 'Meercat'
     assert isinstance(doc['continents'], list)
-    print(doc['_id'])
     assert isinstance(doc['_id'], bson.objectid.ObjectId)
     del doc['_id']
     assert doc == TEST_DOCS[0]
@@ -194,6 +202,7 @@ def test_find_one():
     doc = coll.find_one({'family': 'Herpestidae', 'weight': {'$gt': 20}})
     assert not doc
 
+    # _id must be string or ObjectId
     with pytest.raises(errors.PyMongoError):
         doc = coll.find_one({'_id': 5})
 
@@ -204,6 +213,8 @@ def test_find():
     assert isinstance(doc_cursor, cursor.Cursor)
     docs = list(doc_cursor)
     assert len(docs) == LEN_TEST_DOCS
+    assert all(isinstance(doc, dict) for doc in docs)
+    assert all(not isinstance(doc, StorageObject) for doc in docs)
     assert all(isinstance(doc['_id'], bson.objectid.ObjectId) for doc in docs)
     docs = list(coll.find())
     assert docs[0]['name'] == 'Meercat'
@@ -333,7 +344,9 @@ def test_replace_one():
         coll.replace_one({'_id': 'a'})
     doc = coll.find_one()
 
+    assert '_id' not in TEST_DOCS[1]
     ur = coll.replace_one({'_id': doc['_id']}, TEST_DOCS[1])
+    assert '_id' not in TEST_DOCS[1]
     assert isinstance(ur, results.UpdateResult)
     assert coll.count_documents({'name': 'Indian grey mongoose'}) == 2
 
@@ -409,6 +422,7 @@ def test_update_one():
     assert ur.upserted_id is None
     assert coll.find_one({'name': 'Mongoose'}) is None
     assert coll.find_one({'name': 'Mongooose'})['_id'] == imr.inserted_ids[0]
+    assert isinstance(imr.inserted_ids[0], bson.ObjectId)
 
     ur = coll.update_one({'kingdom': 'bird'}, {'$set': {'name': 'Pidgeotto'}})
     assert ur.matched_count == 1
@@ -674,28 +688,62 @@ def test_common():
     assert Location(_id='c').path == 'c'
 
 
+def test_indicies_basic():
+    client, coll, imr = setup_many()
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.create_index('')
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.create_index(5)
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.create_index([])
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.create_index({'key': 1})
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.create_index([('key', 2)])
 
-# def test_indicies():
-#     client, coll, imr = setup_many()
-#     with pytest.raises(mongita.errors.PyMongoError):
-#         coll.create_index('')
-#     with pytest.raises(mongita.errors.PyMongoError):
-#         coll.create_index(5)
-#     with pytest.raises(mongita.errors.PyMongoError):
-#         coll.create_index([])
-#     with pytest.raises(mongita.errors.PyMongoError):
-#         coll.create_index({'key': 1})
-#     with pytest.raises(mongita.errors.PyMongoError):
-#         coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
-#     with pytest.raises(mongita.errors.PyMongoError):
-#         coll.create_index([('key', 2)])
+    idx_name = coll.create_index('kingdom')
+    assert idx_name == 'kingdom_1'
+    assert coll.count_documents({'kingdom': 'mammal'}) == \
+        sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
+    assert coll.count_documents({'kingdom': 'reptile'}) == \
+        sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile')
+    assert coll.count_documents({'kingdom': 'fish'}) == 0
+    coll.drop_index(idx_name)
 
-#     idx_name = coll.create_index('kingdom')
-#     assert idx_name == 'kingdom_1'
-#     assert coll.count_documents({'kingdom': 'mammal'}) == \
-#         sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
-#     assert coll.count_documents({'kingdom': 'reptile'}) == \
-#         sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile')
-#     assert coll.count_documents({'kingdom': 'fish'}) == 0
+    return # TODO
 
-#     coll.drop_index('kingdom_1')
+    idx_name = coll.create_index('kingdom')
+    coll.drop_index('kingdom_1')
+
+    idx_name = coll.create_index('kingdom')
+    coll.drop_index('kingdom', 1)
+
+    idx_name = coll.create_index('kingdom')
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.drop_index(None)
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.drop_index('kingdom1')
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.drop_index('kingdom__1')
+
+
+
+def test_indicies_filters():
+    client, coll, imr = setup_many()
+
+    coll.create_index('weight')
+    assert coll.count_documents({'weight': {'$eq': 6}}) == \
+        sum(1 for d in TEST_DOCS if d['weight'] == 6)
+    assert coll.count_documents({'weight': {'$ne': 6}}) == \
+        sum(1 for d in TEST_DOCS if d['weight'] != 6)
+    assert coll.count_documents({'weight': {'$lt': 6}}) == \
+        sum(1 for d in TEST_DOCS if d['weight'] < 6)
+    assert coll.count_documents({'weight': {'$lte': 6}}) == \
+        sum(1 for d in TEST_DOCS if d['weight'] <= 6)
+    assert coll.count_documents({'weight': {'$gt': 6}}) == \
+        sum(1 for d in TEST_DOCS if d['weight'] > 6)
+    assert coll.count_documents({'weight': {'$gte': 6}}) == \
+        sum(1 for d in TEST_DOCS if d['weight'] >= 6)
+

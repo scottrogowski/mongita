@@ -31,5 +31,9 @@ class OperationFailure(MongitaError):
     pass
 
 
+class DuplicateKeyError(MongitaError):
+    pass
+
+
 # For pymongo compatibility - especially in unit tests
 PyMongoError = MongitaError

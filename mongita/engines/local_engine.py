@@ -4,8 +4,9 @@ import shutil
 
 import bson
 
+from ..common import StorageObject
 from ..errors import MongitaError
-from .engine_common import Engine, StorageObject
+from .engine_common import Engine
 
 
 class LocalEngine(Engine):

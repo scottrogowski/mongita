@@ -5,7 +5,7 @@ import pathlib
 
 import bson
 
-from .common import support_alert, Location, ok_name
+from .common import support_alert, Location, ok_name, MetaStorageObject
 from .command_cursor import CommandCursor
 from .database import Database
 from .errors import MongitaNotImplementedError, InvalidName
@@ -40,19 +40,19 @@ class MongitaClient(abc.ABC):
         if self._existence_verified:
             return
         if not self.engine.doc_exists(self._metadata_location):
-            metadata = {
+            metadata = MetaStorageObject({
                 'options': {},
                 'database_names': [db_name],
                 'uuid': str(bson.ObjectId()),
-            }
-            self.engine.upload_doc(self._metadata_location, metadata)
+            })
+            self.engine.upload_metadata(self._metadata_location, metadata)
         self._existence_verified = True
 
     @support_alert
     def list_database_names(self):
-        metadata = self.engine.download_doc(self._metadata_location)
-        if metadata:
-            return metadata['database_names']
+        metadata_tup = self.engine.download_metadata(self._metadata_location)
+        if metadata_tup:
+            return metadata_tup[0]['database_names']
         return []
 
     @support_alert

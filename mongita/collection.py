@@ -1,10 +1,11 @@
 import collections
+import time
 
 import bson
 
 from .cursor import Cursor
-from .common import support_alert, Location, ASCENDING, DESCENDING
-from .errors import MongitaError, MongitaNotImplementedError
+from .common import support_alert, Location, ASCENDING, DESCENDING, StorageObject, MetaStorageObject
+from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError, OperationFailure
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
 
 
@@ -109,16 +110,30 @@ def _doc_matches_filter(doc, filter):
     return True
 
 
-def _doc_ids_match_filter_in_idx(idx, filter_v):
+def _doc_ids_match_filter_in_idx(doc_idx, filter_v):
     """
-    :param idx
+    :param doc_idx {key: [ObjectId, ...]}:
+    :param filter_v str|dict:
+    :rtype: set
     """
-    # sortedcontainers.SortedDict
+    # TODO sortedcontainers.SortedDict
     # functools.reduce(operator.iconcat, (weights[el] for el in weights.irange(None,8)))
+    print('_doc_ids_match_filter_in_idx', doc_idx, filter_v)
+    if not doc_idx['idx']:
+        return set()
+
+    key_type = type(doc_idx['example_type'])
+    example_key = next(doc_idx['idx'].keys().__iter__())
+    if not isinstance(example_key, key_type):
+        doc_idx['idx'] = {key_type(k): v for k, v in doc_idx['idx'].items()}
+    idx = doc_idx['idx']
 
     if isinstance(filter_v, dict):
         idx_keys = list(idx.keys())
         for agg_k, agg_v in filter_v.items():
+            print('idx_keys', idx_keys)
+            print('agg_k', agg_k)
+            print('agg_v', agg_v)
             if not idx_keys:
                 break
             if agg_k == '$in':
@@ -145,7 +160,7 @@ def _doc_ids_match_filter_in_idx(idx, filter_v):
                 raise MongitaError("Unexpected match exception %r" % agg_k)
         ret = set()
         for k in idx_keys:
-            ret.add(idx[k])
+            ret.update(idx[k])
         return ret
     return set(idx.get(filter_v, set()))
 
@@ -162,20 +177,49 @@ def _apply_update(doc, update):
 
 
 def _get_item_from_doc(doc, key):
-    item = doc
-    for level in key.split('.'):
-        item = item.get(level, {})
-    return item or None
+    if '.' in key:
+        item = doc
+        for level in key.split('.'):
+            item = item.get(level, {})
+        return item or None
+    return doc.get(key)
 
 
-def _update_idx_doc_from_new_documents(documents, inx_doc):
-    key_str = inx_doc['key_str']
-    new_idx = collections.defaultdict(list, inx_doc['idx'])
+def _update_idx_doc_with_new_documents(documents, idx_doc):
+    key_str = idx_doc['key_str']
+    new_idx = collections.defaultdict(list, idx_doc['idx'])
+    example_type = key_type = None
+    if new_idx:
+        example_type = next(new_idx.keys().__iter__())
+        key_type = type(example_type)
+
+    if not example_type:
+        try:
+            doc = next(documents)
+        except StopIteration:
+            return
+        key = _get_item_from_doc(doc, key_str)
+        new_idx[key].append(str(doc['_id']))
+        example_type = key
+        key_type = type(example_type)
+
     for doc in documents:
-        new_idx[_get_item_from_doc(doc, key_str)].append(doc['_id'])
-    reverse = inx_doc['direction'] == DESCENDING
-    inx_doc['idx'] = dict(sorted(new_idx.items(), reverse=reverse))
-    return inx_doc
+        key = _get_item_from_doc(doc, key_str)
+        if not isinstance(key, key_type):
+            # TODO Nonetype keys
+            raise MongitaError("All index keys must be the same type. "
+                               f"For index '{key_str}', the type is '{key_type}'. "
+                               f"However, when building, a key arrived of type {type(key)}")
+        new_idx[key].append(str(doc['_id']))
+    idx_doc['example_type'] = example_type
+    reverse = idx_doc['direction'] == DESCENDING
+    idx_doc['idx'] = dict(sorted(new_idx.items(), reverse=reverse))
+
+
+def _remove_docs_from_idx_doc(doc_ids, idx_doc):
+    for k in idx_doc['idx'].keys():
+        idx_doc['idx'][k] = [d for d in idx_doc['idx'][k] if d not in doc_ids]
+    return idx_doc
 
 
 def _sorter(ret, sort_list):
@@ -226,69 +270,96 @@ class Collection():
             return
         if not self._engine.doc_exists(self._metadata_location):
             self._engine.create_path(self._base_location)
-            metadata = {
+            metadata = MetaStorageObject({
                 'options': {},
                 'indexes': {},
-                '_id': bson.ObjectId(),
-            }
-            self._engine.upload_doc(self._metadata_location, metadata)
+                '_id': str(bson.ObjectId()),
+            })
+            if not self._engine.upload_metadata(self._metadata_location, metadata):
+                raise OperationFailure("expected match")
         self.database._create(self.name)
         self._existence_verified = True
 
     def _insert_one(self, document):
-        document = document.copy()
-        obj_id = document.get('_id', '') or bson.ObjectId()
-        document_location = self._get_location(obj_id)
-        if self._engine.doc_exists(document_location):
-            raise MongitaError("Document %r already exists" % obj_id)
-        document['_id'] = obj_id
-        self._engine.upload_doc(document_location, document)
-        return document
+        document_location = self._get_location(document['_id'])
+        success = self._engine.upload_doc(document_location, document,
+                                          if_gen_match=True)
+        if not success:
+            raise DuplicateKeyError("Document %r already exists" % document['_id'])
 
     @support_alert
     def insert_one(self, document):
         _validate_doc(document)
+        document = StorageObject(document)
+        document['_id'] = document.get('_id') or bson.ObjectId()
         self._create()
-        document = self._insert_one(document)
-        self._update_indicies([document])
+        metadata = self._checkout_metadata([document['_id']], 'add')
+        self._insert_one(document)
+        self._update_indicies([document], metadata)
         return InsertOneResult(document['_id'])
 
     @support_alert
     def insert_many(self, documents, ordered=True):
+        """
+        :param list documents:
+        :param bool ordered:
+
+        Insert documents. If ordered, stop inserting if there is an error
+        """
         if not isinstance(documents, list):
             raise MongitaError("Documents must be a list")
-        self._create()
-        new_docs = []
+        ready_docs = []
         for doc in documents:
             try:
                 _validate_doc(doc)
-                new_docs.append(self._insert_one(doc))
             except MongitaError:
                 if ordered:
-                    self._update_indicies(new_docs)
-                    return InsertManyResult(new_docs)
+                    break
                 continue
-        self._update_indicies(new_docs)
-        return InsertManyResult(new_docs)
+            doc = StorageObject(doc)
+            doc['_id'] = doc.get('_id') or bson.ObjectId()
+            ready_docs.append(doc)
+        self._create()
+        success_docs = []
+        metadata = self._checkout_metadata([d['_id'] for d in ready_docs], 'add')
+        start = time.time()
+        touch_idx = 1
+        for doc in ready_docs:
+            try:
+                self._insert_one(doc)
+                success_docs.append(doc)
+            except MongitaError:
+                if ordered:
+                    self._update_indicies(success_docs, metadata)
+                    return InsertManyResult(success_docs)
+                continue
+            if time.time() - start > touch_idx:
+                self._engine.touch_metadata(self._metadata_location)
+                touch_idx += 1
+        self._update_indicies(success_docs, metadata)
+        return InsertManyResult(success_docs)
 
     @support_alert
     def replace_one(self, filter, replacement, upsert=False):
         filter = filter or {}
         _validate_filter(filter)
         _validate_doc(replacement)
-        replacement = replacement.copy()
+        replacement = StorageObject(replacement)
 
         doc_id = self._find_one_id(filter)
         if not doc_id:
             if upsert:
-                new_doc = self._insert_one(replacement)
-                return UpdateResult(0, 1, new_doc['_id'])
+                replacement['_id'] = replacement.get('_id') or bson.ObjectId()
+                self._insert_one(replacement)
+                return UpdateResult(0, 1, replacement['_id'])
             return UpdateResult(0, 0)
         replacement['_id'] = doc_id
-
-        self._engine.upload_doc(self._get_location(doc_id), replacement)
-        self._update_indicies([replacement])
-        return UpdateResult(1, 1)
+        metadata = self._checkout_metadata([doc_id], 'add')
+        success = self._engine.upload_doc(self._get_location(doc_id), replacement)
+        self._update_indicies([replacement], metadata)
+        if success:
+            return UpdateResult(1, 1)
+        return UpdateResult(1, 0)
 
     def _find_one_id(self, filter):
         """
@@ -319,7 +390,7 @@ class Collection():
             if doc:
                 return dict(doc)
 
-    def _find_ids(self, filter, sort=None, limit=None):
+    def _find_ids(self, filter, sort=None, limit=None, metadata=None):
         """
         :param filter dict:
         :param sort bool:
@@ -328,30 +399,33 @@ class Collection():
         This will, in some cases, download documents. These are cached in the
         storage layer so performance hits are minimal.
         """
-        print('a')
         filter = filter or {}
         sort = sort or []
 
         if limit == 0:
             return
 
-        print('b')
         reg_filters = {}
         idx_filters = {}
-        indexes = self._get_metadata().get('indexes', {})
+        metadata = metadata or self._get_metadata()
+        indexes = metadata.get('indexes', {})
+        print('indexes', indexes)
         for filter_k, filter_v in filter.items():
+            print('filters', filter_k, filter_v)
             if filter_k + '_1' in indexes:
                 idx_filters[filter_k + '_1'] = filter_v
             elif filter_k + '_-1' in indexes:
                 idx_filters[filter_k + '_-1'] = filter_v
             else:
                 reg_filters[filter_k] = filter_v
-
+        print('idx_filters', idx_filters)
         if idx_filters:
             doc_ids_from_all_idx_filters = []
             for idx_k, filter_v in idx_filters.items():
                 doc_idx = indexes[idx_k]
+                print('doc_idx', doc_idx)
                 doc_ids = _doc_ids_match_filter_in_idx(doc_idx, filter_v)
+                print('doc_ids', doc_ids)
                 if not doc_ids:
                     return
                 doc_ids_from_all_idx_filters.append(doc_ids)
@@ -360,23 +434,17 @@ class Collection():
         else:
             doc_ids = self._engine.list_ids(self._base_location)
 
-        print('c')
-
         if sort:
-            print('c1')
             ret = []
             for doc_id in doc_ids:
                 doc = self._engine.download_doc(self._get_location(doc_id))
                 if _doc_matches_filter(doc, reg_filters):
                     ret.append(doc)
             _sorter(ret, sort)
-            print('c2')
             if limit is None:
-                print('c3')
                 for doc in ret:
                     yield doc['_id']
             else:
-                print('c4', ret)
                 i = 0
                 for doc in ret:
                     yield doc['_id']
@@ -384,7 +452,6 @@ class Collection():
                     if i == limit:
                         return
             return
-        print('d')
 
         if limit is None:
             for doc_id in doc_ids:
@@ -393,7 +460,6 @@ class Collection():
                     yield doc['_id']
             return
 
-        print('e')
         i = 0
         for doc_id in doc_ids:
             doc = self._engine.download_doc(self._get_location(doc_id))
@@ -403,11 +469,10 @@ class Collection():
                 if i == limit:
                     return
 
-    def _find(self, filter, sort=None, limit=None):
-        for doc_id in self._find_ids(filter, sort, limit):
+    def _find(self, filter, sort=None, limit=None, metadata=None):
+        for doc_id in self._find_ids(filter, sort, limit, metadata=metadata):
             doc = self._engine.download_doc(self._get_location(doc_id))
             yield dict(doc)
-        print('done with _find')
 
     @support_alert
     def find_one(self, filter=None):
@@ -426,11 +491,16 @@ class Collection():
         Given a doc_id and an update dict, find the document and safely update it
         """
         loc = self._get_location(doc_id)
-        doc = self._engine.download_doc(loc)
-        _apply_update(doc, update)
-        self._engine.upload_doc(loc, doc, generation=doc.generation)
+        for attempt in range(1, 6):
+            doc = self._engine.download_doc(loc)
+            _apply_update(doc, update)
+            success = self._engine.upload_doc(loc, doc, if_gen_match=True)
+            if success:
+                break
+            time.sleep(attempt ** 4 / 1000)
+        else:
+            raise OperationFailure("Could not update document after 5 tries")
         return dict(doc)
-        # TODO generation fail handling
 
     @support_alert
     def update_one(self, filter, update, upsert=False):
@@ -443,8 +513,9 @@ class Collection():
         matched_count = len(doc_ids)
         if not matched_count:
             return UpdateResult(matched_count, 0)
+        metadata = self._checkout_metadata(doc_ids[:1], 'add')
         doc = self._update_doc(doc_ids[0], update)
-        self._update_indicies([doc])
+        self._update_indicies([doc], metadata)
         return UpdateResult(matched_count, 1)
 
     @support_alert
@@ -456,11 +527,53 @@ class Collection():
 
         success_docs = []
         matched_cnt = 0
-        for doc_id in self._find_ids(filter):
+        doc_ids = list(self._find_ids(filter))
+        metadata = self._checkout_metadata(doc_ids, 'add')
+        start = time.time()
+        touch_idx = 1
+        for doc_id in doc_ids:
             doc = self._update_doc(doc_id, update)
             success_docs.append(doc)
             matched_cnt += 1
+            if time.time() - start > touch_idx:
+                self._engine.touch_metadata(self._metadata_location)
+                touch_idx += 1
+        self._update_indicies(success_docs, metadata)
         return UpdateResult(matched_cnt, len(success_docs))
+
+    @support_alert
+    def delete_one(self, filter):
+        _validate_filter(filter)
+
+        doc_id = self._find_one_id(filter)
+        if not doc_id:
+            return DeleteResult(0)
+        loc = self._get_location(doc_id)
+
+        metadata = self._checkout_metadata([doc_id], 'del')
+        if self._engine.delete_doc(loc):
+            self._update_indicies_deletes([doc_id], metadata)
+            return DeleteResult(1)
+        self._update_indicies_deletes([], metadata)
+        return DeleteResult(0)
+
+    @support_alert
+    def delete_many(self, filter):
+        _validate_filter(filter)
+
+        doc_ids = list(self._find_ids(filter))
+        metadata = self._checkout_metadata(doc_ids, 'del')
+        success_deletes = []
+        start = time.time()
+        touch_idx = 1
+        for doc_id in doc_ids:
+            if self._engine.delete_doc(self._get_location(doc_id)):
+                success_deletes.append(doc_id)
+            if time.time() - start > touch_idx:
+                self._engine.touch_metadata(self._metadata_location)
+                touch_idx += 1
+        self._update_indicies_deletes(success_deletes, metadata)
+        return DeleteResult(len(success_deletes))
 
     @support_alert
     def count_documents(self, filter):
@@ -480,13 +593,62 @@ class Collection():
         return list(uniq)
 
     def _get_metadata(self):
-        return self._engine.download_doc(self._metadata_location) or {}
+        """
+        Get metadata. If we encounter a corrupted state, fix it
+        """
+        for attempt in range(1, 6):
+            metadata_tup = self._engine.download_metadata(self._metadata_location)
+            print('metadata_tup', metadata_tup)
+            if not metadata_tup:
+                return {}
+            metadata, staleness = metadata_tup
+            if 'updating_set' not in metadata:
+                return metadata
+            if staleness < 3:
+                time.sleep(attempt ** 4 / 1000)
+                continue
+            self._engine.touch_metadata(self._metadata_location)
+            if metadata['updating_set']['op'] in ('add', 'idx'):
+                docs = list(self.find({'_id': {'$in': list(map(bson.ObjectId, metadata['updating_set']['doc_ids']))}}))
+                try:
+                    return self._update_indicies(docs, metadata)
+                except OperationFailure:
+                    pass
+            else:
+                try:
+                    return self._update_indicies_deletes(metadata['updating_set']['doc_ids'], metadata)
+                except OperationFailure:
+                    pass
+            time.sleep(attempt ** 4 / 1000)
+        raise OperationFailure("Could not get metadata after 5 tries")
 
-    def _update_indicies(self, documents):
-        metadata = self._get_metadata()
+    def _checkout_metadata(self, doc_ids, op):
+        for attempt in range(1, 6):
+            metadata = self._get_metadata()
+            metadata['updating_set'] = {'doc_ids': list(map(str, doc_ids)), 'op': op}
+            success = self._engine.upload_metadata(self._metadata_location, metadata)
+            if success:
+                return metadata
+        raise OperationFailure("Could not checkout metadata after 5 tries")
+
+    def _update_indicies_deletes(self, doc_ids, metadata):
+        if doc_ids:
+            for idx_doc in metadata.get('indexes', {}).values():
+                _remove_docs_from_idx_doc(doc_ids, idx_doc)
+        del metadata['updating_set']
+        success = self._engine.upload_metadata(self._metadata_location, metadata)
+        if success:
+            return metadata
+        raise OperationFailure("Could not update indicies")
+
+    def _update_indicies(self, documents, metadata):
         for idx_doc in metadata.get('indexes', {}).values():
-            _update_idx_doc_from_new_documents(documents, idx_doc)
-        self._engine.upload_doc(self._metadata_location, metadata)
+            _update_idx_doc_with_new_documents(documents, idx_doc)
+        del metadata['updating_set']
+        success = self._engine.upload_metadata(self._metadata_location, metadata)
+        if success:
+            return metadata
+        raise OperationFailure("Could not update indicies")
 
     @support_alert
     def create_index(self, keys):
@@ -505,18 +667,22 @@ class Collection():
         key_str, direction = keys[0]
 
         idx_name = f'{key_str}_{direction}'
-        inx_doc = {
+        idx_doc = {
             '_id': idx_name,
             'key_str': key_str,
             'direction': direction,
             'idx': {},
+            'example_type': None
         }
-        idx_doc = _update_idx_doc_from_new_documents(list(self._find({})), inx_doc)
 
-        # TODO collection-level write lock
-        metadata = self._get_metadata()
+        metadata = self._checkout_metadata([], 'idx')
+        _update_idx_doc_with_new_documents(self._find({}, metadata=metadata), idx_doc)
+        print('idx_doc_after_create', idx_doc)
         metadata['indexes'][idx_name] = idx_doc
-        self._engine.upload_doc(self._metadata_location, metadata)
+        del metadata['updating_set']
+        success = self._engine.upload_metadata(self._metadata_location, metadata)
+        if not success:
+            raise OperationFailure("Could not create index")
         return idx_name
 
     @support_alert
@@ -534,34 +700,11 @@ class Collection():
         except ValueError:
             raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
 
-        metadata = self._get_metadata()
+        metadata = self._checkout_metadata([], 'idx')
         try:
             del metadata['indexes'][index_or_name]
         except KeyError:
             pass
-        self._engine.upload_doc(self._metadata_location, metadata)
-
-
-    @support_alert
-    def delete_one(self, filter):
-        _validate_filter(filter)
-
-        doc_id = self._find_one_id(filter)
-        if not doc_id:
-            return DeleteResult(0)
-
-        self._engine.delete_doc(self._get_location(doc_id))
-        return DeleteResult(1)
-        # TODO delete error handling
-
-    @support_alert
-    def delete_many(self, filter):
-        _validate_filter(filter)
-
-        doc_ids_gen = self._find_ids(filter)
-
-        deleted_count = 0
-        for doc_id in doc_ids_gen:
-            if self._engine.delete_doc(self._get_location(doc_id)):
-                deleted_count += 1
-        return DeleteResult(deleted_count)
+        success = self._engine.upload_metadata(self._metadata_location, metadata)
+        if not success:
+            raise OperationFailure("Could not drop index")

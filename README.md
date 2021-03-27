@@ -86,6 +86,7 @@ errors
 - PyMongoError (alias of MongitaError)
 - InvalidOperation
 - OperationFailure
+- DuplicateKeyError
 - MongitaNotImplementedError
 
 results
