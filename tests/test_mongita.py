@@ -1,4 +1,5 @@
 from datetime import datetime
+import functools
 import os
 import sys
 import shutil
@@ -9,8 +10,9 @@ import pytest
 sys.path.append(os.getcwd().split('/tests')[0])
 
 import mongita
-from mongita import (MongitaClientMemory, ASCENDING, DESCENDING, errors,
-                     results, cursor, collection, command_cursor, database, engines)
+from mongita import (MongitaClientMemory, MongitaClientLocal, ASCENDING, DESCENDING,
+                     errors, results, cursor, collection, command_cursor, database,
+                     engines)
 from mongita.common import Location, StorageObject
 
 TEST_DIR = 'mongita_unittest_storage'
@@ -71,26 +73,31 @@ TEST_DOCS = [
     }
 ]
 LEN_TEST_DOCS = len(TEST_DOCS)
+CLIENTS = (MongitaClientMemory,
+           )#functools.partial(MongitaClientLocal, '/tmp/mongita_unittests'))
 
 
-def setup_one():
-    client = MongitaClientMemory()
+def setup_one(client_class):
+    client = client_class()
+    client.drop_database('db')
     coll = client.db.snake_hunter
     ior = coll.insert_one(TEST_DOCS[0])
     assert '_id' not in TEST_DOCS[0]
     return client, coll, ior
 
 
-def setup_many():
-    client = MongitaClientMemory()
+def setup_many(client_class):
+    client = client_class()
+    client.drop_database('db')
     coll = client.db.snake_hunter
     imr = coll.insert_many(TEST_DOCS)
     assert not any(['_id' in d for d in TEST_DOCS])
     return client, coll, imr
 
 
-def test_insert_one():
-    client, coll, ior = setup_one()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_insert_one(client_class):
+    client, coll, ior = setup_one(client_class)
 
     # document required
     with pytest.raises(TypeError):
@@ -126,8 +133,9 @@ def test_insert_one():
         coll.insert_one(doc)
 
 
-def test_insert_many():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_insert_many(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(TypeError):
         coll.insert_many()
     with pytest.raises(errors.PyMongoError):
@@ -150,8 +158,9 @@ def test_insert_many():
     assert isinstance(imr.inserted_ids[0], bson.ObjectId)
 
 
-def test_count_documents_one():
-    client, coll, ior = setup_one()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_count_documents_one(client_class):
+    client, coll, ior = setup_one(client_class)
     with pytest.raises(TypeError):
         coll.count_documents()
     assert coll.count_documents({}) == 1
@@ -163,8 +172,9 @@ def test_count_documents_one():
     assert coll.count_documents({'blah': 'blah'}) == 0
 
 
-def test_find_one():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_find_one(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(errors.PyMongoError):
         coll.find_one(['hi'])
     with pytest.raises(errors.PyMongoError):
@@ -187,6 +197,10 @@ def test_find_one():
     doc = coll.find_one({'_id': imr.inserted_ids[1]})
     assert doc['name'] == 'Indian grey mongoose'
 
+    # bson or str should both work for _id lookups
+    doc = coll.find_one({'_id': str(imr.inserted_ids[1])})
+    assert doc['name'] == 'Indian grey mongoose'
+
     doc = coll.find_one({'family': 'Herpestidae'})
     assert doc['name'] == 'Meercat'
 
@@ -207,8 +221,9 @@ def test_find_one():
         doc = coll.find_one({'_id': 5})
 
 
-def test_find():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_find(client_class):
+    client, coll, imr = setup_many(client_class)
     doc_cursor = coll.find()
     assert isinstance(doc_cursor, cursor.Cursor)
     docs = list(doc_cursor)
@@ -234,8 +249,9 @@ def test_find():
     assert len(list(doc_cursor)) == 2
 
 
-def test_cursor():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_cursor(client_class):
+    client, coll, imr = setup_many(client_class)
     doc_cursor = coll.find()
 
     with pytest.raises(errors.MongitaNotImplementedError):
@@ -317,8 +333,9 @@ def test_cursor():
         coll.find().sort([(ASCENDING, 'kingdom')])
 
 
-def test_limit():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_limit(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(TypeError):
         coll.find().limit(2.0)
 
@@ -336,8 +353,9 @@ def test_limit():
         doc_cursor.limit(2)
 
 
-def test_replace_one():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_replace_one(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(TypeError):
         coll.replace_one()
     with pytest.raises(TypeError):
@@ -373,8 +391,9 @@ def test_replace_one():
                               upsert=True)
 
 
-def test_filters():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_filters(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(errors.PyMongoError):
         coll.find({'kingdom': {'$bigger': 'bird'}})
 
@@ -404,8 +423,9 @@ def test_filters():
         list(coll.find({'kingdom': {'$nin': 'bird'}}))
 
 
-def test_update_one():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_update_one(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(errors.PyMongoError):
         coll.update_one({}, {}, upsert=True)
     with pytest.raises(errors.PyMongoError):
@@ -466,8 +486,9 @@ def test_update_one():
         coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
 
 
-def test_update_many():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_update_many(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(errors.PyMongoError):
         coll.update_many({}, {}, upsert=True)
     with pytest.raises(errors.PyMongoError):
@@ -494,8 +515,9 @@ def test_update_many():
            set(d['weight'] + 1 if d['weight'] < 4 else d['weight'] for d in TEST_DOCS)
 
 
-def test_distinct():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_distinct(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(errors.PyMongoError):
         coll.distinct(5)
     dist = coll.distinct('name')
@@ -509,8 +531,9 @@ def test_distinct():
     assert set(dist) == set(d['family'] for d in TEST_DOCS if d['kingdom'] == 'mammal')
 
 
-def test_delete_one():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_delete_one(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(TypeError):
         coll.delete_one()
     dor = coll.delete_one({})
@@ -528,8 +551,9 @@ def test_delete_one():
     assert dor.deleted_count == 0
 
 
-def test_delete_many():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_delete_many(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(TypeError):
         coll.delete_many()
     dor = coll.delete_many({})
@@ -555,8 +579,9 @@ def test_delete_many():
     assert coll.count_documents({}) == LEN_TEST_DOCS - num_mammals
 
 
-def test_basic_validation():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_basic_validation(client_class):
+    client, coll, imr = setup_many(client_class)
 
     with pytest.raises(errors.PyMongoError):
         coll.insert_one('')
@@ -572,8 +597,9 @@ def test_basic_validation():
         coll.insert_one({'_id': 5, 'param': 'param'})
 
 
-def test_collection():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_collection(client_class):
+    client, coll, imr = setup_many(client_class)
     assert coll.name == 'snake_hunter'
     assert coll.full_name == 'db.snake_hunter'
     assert isinstance(repr(coll), str)
@@ -586,8 +612,9 @@ def test_collection():
     assert coll2.name == 'snake_hunter.blah'
 
 
-def test_database():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_database(client_class):
+    client, coll, imr = setup_many(client_class)
     db = client.db
     assert db.name == 'db'
     assert isinstance(repr(db), str)
@@ -628,8 +655,9 @@ def test_database():
         db['']
 
 
-def test_client():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_client(client_class):
+    client, coll, imr = setup_many(client_class)
     db = coll.database
     assert isinstance(repr(client), str)
     assert isinstance(db, database.Database)
@@ -666,30 +694,34 @@ def test_client():
         client['']
 
 
-def test_empty_client():
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_empty_client(client_class):
     client = MongitaClientMemory()
     assert client.list_database_names() == []
     assert client.db.list_collection_names() == []
     assert client.db.coll.count_documents({}) == 0
 
 
-def test_bad_import():
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_bad_import(client_class):
     with pytest.raises(mongita.errors.MongitaNotImplementedError):
         mongita.InsertOne()
     with pytest.raises(AttributeError):
         mongita.mongodb_fictional_method()
 
 
-def test_common():
-    assert isinstance(repr(Location()), str)
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_common(client_class):
+    assert isinstance(repr(Location('a')), str)
     assert Location(database='a', collection='b').path == 'a/b'
     assert Location(database='a', collection='b', _id='c').path == 'a/b/c'
     assert Location(database='a', _id='c').path == 'a/c'
     assert Location(_id='c').path == 'c'
 
 
-def test_indicies_basic():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_indicies_basic(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index('')
     with pytest.raises(mongita.errors.PyMongoError):
@@ -712,13 +744,11 @@ def test_indicies_basic():
     assert coll.count_documents({'kingdom': 'fish'}) == 0
     coll.drop_index(idx_name)
 
-    return # TODO
-
     idx_name = coll.create_index('kingdom')
     coll.drop_index('kingdom_1')
 
     idx_name = coll.create_index('kingdom')
-    coll.drop_index('kingdom', 1)
+    coll.drop_index([('kingdom', 1)])
 
     idx_name = coll.create_index('kingdom')
     with pytest.raises(mongita.errors.PyMongoError):
@@ -729,9 +759,9 @@ def test_indicies_basic():
         coll.drop_index('kingdom__1')
 
 
-
-def test_indicies_filters():
-    client, coll, imr = setup_many()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_indicies_filters(client_class):
+    client, coll, imr = setup_many(client_class)
 
     coll.create_index('weight')
     assert coll.count_documents({'weight': {'$eq': 6}}) == \
@@ -746,4 +776,3 @@ def test_indicies_filters():
         sum(1 for d in TEST_DOCS if d['weight'] > 6)
     assert coll.count_documents({'weight': {'$gte': 6}}) == \
         sum(1 for d in TEST_DOCS if d['weight'] >= 6)
-

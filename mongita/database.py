@@ -2,7 +2,7 @@ import bson
 
 from .collection import Collection
 from .command_cursor import CommandCursor
-from .common import support_alert, Location, ok_name, MetaStorageObject
+from .common import support_alert, Location, ok_name, StorageObject
 from .errors import MongitaNotImplementedError, InvalidName
 
 
@@ -45,7 +45,7 @@ class Database():
             return
         if not self._engine.doc_exists(self._metadata_location):
             self._engine.create_path(self._base_location)
-            metadata = MetaStorageObject({
+            metadata = StorageObject({
                 'options': {},
                 'collection_names': [coll_name],
                 'uuid': str(bson.ObjectId()),
@@ -76,4 +76,7 @@ class Database():
             collection = collection.name
         location = Location(database=self.name, collection=collection)
         self._engine.delete_dir(location)
-        del self._cache[collection]
+        try:
+            del self._cache[collection]
+        except KeyError:
+            pass

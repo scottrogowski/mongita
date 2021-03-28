@@ -4,7 +4,7 @@ import time
 import bson
 
 from .cursor import Cursor
-from .common import support_alert, Location, ASCENDING, DESCENDING, StorageObject, MetaStorageObject
+from .common import support_alert, Location, ASCENDING, DESCENDING, StorageObject
 from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError, OperationFailure
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
 
@@ -118,7 +118,6 @@ def _doc_ids_match_filter_in_idx(doc_idx, filter_v):
     """
     # TODO sortedcontainers.SortedDict
     # functools.reduce(operator.iconcat, (weights[el] for el in weights.irange(None,8)))
-    print('_doc_ids_match_filter_in_idx', doc_idx, filter_v)
     if not doc_idx['idx']:
         return set()
 
@@ -131,9 +130,6 @@ def _doc_ids_match_filter_in_idx(doc_idx, filter_v):
     if isinstance(filter_v, dict):
         idx_keys = list(idx.keys())
         for agg_k, agg_v in filter_v.items():
-            print('idx_keys', idx_keys)
-            print('agg_k', agg_k)
-            print('agg_v', agg_v)
             if not idx_keys:
                 break
             if agg_k == '$in':
@@ -270,7 +266,7 @@ class Collection():
             return
         if not self._engine.doc_exists(self._metadata_location):
             self._engine.create_path(self._base_location)
-            metadata = MetaStorageObject({
+            metadata = StorageObject({
                 'options': {},
                 'indexes': {},
                 '_id': str(bson.ObjectId()),
@@ -409,23 +405,18 @@ class Collection():
         idx_filters = {}
         metadata = metadata or self._get_metadata()
         indexes = metadata.get('indexes', {})
-        print('indexes', indexes)
         for filter_k, filter_v in filter.items():
-            print('filters', filter_k, filter_v)
             if filter_k + '_1' in indexes:
                 idx_filters[filter_k + '_1'] = filter_v
             elif filter_k + '_-1' in indexes:
                 idx_filters[filter_k + '_-1'] = filter_v
             else:
                 reg_filters[filter_k] = filter_v
-        print('idx_filters', idx_filters)
         if idx_filters:
             doc_ids_from_all_idx_filters = []
             for idx_k, filter_v in idx_filters.items():
                 doc_idx = indexes[idx_k]
-                print('doc_idx', doc_idx)
                 doc_ids = _doc_ids_match_filter_in_idx(doc_idx, filter_v)
-                print('doc_ids', doc_ids)
                 if not doc_ids:
                     return
                 doc_ids_from_all_idx_filters.append(doc_ids)
@@ -550,7 +541,7 @@ class Collection():
             return DeleteResult(0)
         loc = self._get_location(doc_id)
 
-        metadata = self._checkout_metadata([doc_id], 'del')
+        metadata = self._checkout_metadata([doc_id], 'delete')
         if self._engine.delete_doc(loc):
             self._update_indicies_deletes([doc_id], metadata)
             return DeleteResult(1)
@@ -562,7 +553,7 @@ class Collection():
         _validate_filter(filter)
 
         doc_ids = list(self._find_ids(filter))
-        metadata = self._checkout_metadata(doc_ids, 'del')
+        metadata = self._checkout_metadata(doc_ids, 'delete')
         success_deletes = []
         start = time.time()
         touch_idx = 1
@@ -596,33 +587,36 @@ class Collection():
         """
         Get metadata. If we encounter a corrupted state, fix it
         """
-        for attempt in range(1, 6):
+        for attempt in range(1, 8):
             metadata_tup = self._engine.download_metadata(self._metadata_location)
-            print('metadata_tup', metadata_tup)
             if not metadata_tup:
                 return {}
             metadata, staleness = metadata_tup
             if 'updating_set' not in metadata:
                 return metadata
-            if staleness < 3:
+            if staleness < 2:
                 time.sleep(attempt ** 4 / 1000)
                 continue
             self._engine.touch_metadata(self._metadata_location)
-            if metadata['updating_set']['op'] in ('add', 'idx'):
-                docs = list(self.find({'_id': {'$in': list(map(bson.ObjectId, metadata['updating_set']['doc_ids']))}}))
+            if metadata['updating_set']['op'] in ('add', 'mod_idx'):
+                ids_in = metadata['updating_set']['doc_ids']
+                docs = list(self._find({'_id': {'$in': ids_in}}, metadata=metadata))
                 try:
-                    return self._update_indicies(docs, metadata)
+                    ret = self._update_indicies(docs, metadata)
+                    return ret
                 except OperationFailure:
                     pass
             else:
                 try:
-                    return self._update_indicies_deletes(metadata['updating_set']['doc_ids'], metadata)
+                    ret = self._update_indicies_deletes(metadata['updating_set']['doc_ids'], metadata)
+                    return ret
                 except OperationFailure:
                     pass
             time.sleep(attempt ** 4 / 1000)
-        raise OperationFailure("Could not get metadata after 5 tries")
+        raise OperationFailure("Couldn't get metadata. Timed out")
 
     def _checkout_metadata(self, doc_ids, op):
+        assert op in ('add', 'mod_idx', 'delete')
         for attempt in range(1, 6):
             metadata = self._get_metadata()
             metadata['updating_set'] = {'doc_ids': list(map(str, doc_ids)), 'op': op}
@@ -675,9 +669,8 @@ class Collection():
             'example_type': None
         }
 
-        metadata = self._checkout_metadata([], 'idx')
+        metadata = self._checkout_metadata([], 'mod_idx')
         _update_idx_doc_with_new_documents(self._find({}, metadata=metadata), idx_doc)
-        print('idx_doc_after_create', idx_doc)
         metadata['indexes'][idx_name] = idx_doc
         del metadata['updating_set']
         success = self._engine.upload_metadata(self._metadata_location, metadata)
@@ -688,10 +681,11 @@ class Collection():
     @support_alert
     def drop_index(self, index_or_name):
         if isinstance(index_or_name, (list, tuple)) \
-           and len(index_or_name) == 2 \
-           and isinstance(index_or_name[0], str) \
-           and isinstance(index_or_name[1], int):
-            index_or_name = f'{index_or_name[0]}_{index_or_name[1]}'
+           and len(index_or_name) == 1 \
+           and len(index_or_name[0]) == 2 \
+           and isinstance(index_or_name[0][0], str) \
+           and isinstance(index_or_name[0][1], int):
+            index_or_name = f'{index_or_name[0][0]}_{index_or_name[0][1]}'
         if not isinstance(index_or_name, str):
             raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
         try:
@@ -700,11 +694,12 @@ class Collection():
         except ValueError:
             raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
 
-        metadata = self._checkout_metadata([], 'idx')
+        metadata = self._checkout_metadata([], 'mod_idx')
         try:
             del metadata['indexes'][index_or_name]
         except KeyError:
             pass
+        del metadata['updating_set']
         success = self._engine.upload_metadata(self._metadata_location, metadata)
         if not success:
             raise OperationFailure("Could not drop index")

@@ -1,5 +1,10 @@
 import functools
 import json
+import os
+import re
+import unicodedata
+import time
+
 
 import bson
 
@@ -7,6 +12,33 @@ from .errors import MongitaError
 
 ASCENDING = 1
 DESCENDING = -1
+
+
+_windows_device_files = ('CON', 'AUX', 'COM1', 'COM2', 'COM3', 'COM4', 'LPT1',
+                         'LPT2', 'LPT3', 'PRN', 'NUL')
+_filename_ascii_strip_re = re.compile(r'[^A-Za-z0-9_.-]')
+
+
+def _secure_filename(filename: str) -> str:
+    r"""From werkzeug source"""
+    filename = unicodedata.normalize("NFKD", filename)
+    filename = filename.encode("ascii", "ignore").decode("ascii")
+    for sep in os.path.sep, os.path.altsep:
+        if sep:
+            filename = filename.replace(sep, " ")
+    filename = str(_filename_ascii_strip_re.sub("", "_".join(filename.split()))).strip(
+        "._"
+    )
+    # on nt a couple of special files are present in each folder.  We
+    # have to ensure that the target file is not such a filename.  In
+    # this case we prepend an underline
+    if (
+        os.name == "nt"
+        and filename
+        and filename.split(".")[0].upper() in _windows_device_files
+    ):
+        filename = f"_{filename}"
+    return filename
 
 
 def ok_name(name):
@@ -33,6 +65,14 @@ def support_alert(func):
     return inner
 
 
+def int_to_bytes(x: int) -> bytes:
+    return x.to_bytes(8, 'big')
+
+
+def int_from_bytes(xbytes: bytes) -> int:
+    return int.from_bytes(xbytes, 'big')
+
+
 class StorageObject(dict):
     __slots__ = ['generation']
 
@@ -40,31 +80,19 @@ class StorageObject(dict):
         self.generation = generation
         super().__init__(doc)
 
-    def to_bytes(self):
+    def to_storage(self, strict=False):
         self.generation += 1
-        return bson.encode({'doc': self, 'generation': self.generation})
+        if strict:
+            return int_to_bytes(self.generation) + bson.dumps(self)
+        return self
 
     @staticmethod
-    def from_bytes(obj):
-        so = bson.decode(obj)
-        return StorageObject(so['doc'], so['generation'])
-
-
-class MetaStorageObject(dict):
-    def __init__(self, doc, generation=0):
-        self.generation = generation
-        super().__init__(doc)
-
-    def to_bytes(self):
-        self.generation += 1
-        print("to_bytes", self)
-        return json.dumps({'doc': self, 'generation': self.generation})
-
-    @staticmethod
-    def from_bytes(obj):
-        so = json.loads(obj)
-        print("from_bytes", so)
-        return MetaStorageObject(so['doc'], so['generation'])
+    def from_storage(obj, strict=False):
+        if strict:
+            generation = int_from_bytes(obj[:8])
+            doc = bson.decode(obj[8:])
+            return StorageObject(doc, generation)
+        return obj
 
 
 class Location():
@@ -76,10 +104,10 @@ class Location():
     __slots__ = ['database', 'collection', '_id', 'path']
 
     def __init__(self, database=None, collection=None, _id=None):
-        self.database = database
-        self.collection = collection
+        self.database = database and _secure_filename(database)
+        self.collection = collection and _secure_filename(collection)
         self._id = _id
-        self.path = '/'.join(filter(None, (database, collection, _id and str(_id))))
+        self.path = os.path.join(*tuple(filter(None, (database, collection, _id and _secure_filename(str(_id))))))
 
     # @staticmethod
     # def from_path(self, path):
@@ -91,6 +119,12 @@ class Location():
     # def fake_path(self):
     #     return self.path.replace('/', '/')
 
+    def parent_path(self):
+        return os.path.join(*tuple(filter(None, (self.database, self.collection))))
+
+    def is_collection(self):
+        return self.database and self.collection and not self._id
+
     def is_in_collection(self, collection_location):
         return (self.is_in_collection_incl_metadata(collection_location)
                 and not str(self._id).startswith('$'))
@@ -101,7 +135,7 @@ class Location():
                      or self.collection == collection_location.collection))
 
     def __repr__(self):
-        return f"Location(db={self.database} collection={self.collection}, _id={self._id}"
+        return f"Location(db={self.database} collection={self.collection}, _id={self._id})"
 
     def __hash__(self):
         return hash(self.path)

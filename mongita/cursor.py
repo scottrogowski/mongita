@@ -33,9 +33,7 @@ class Cursor():
     def _gen(self):
         if self._cursor:
             return self._cursor
-        print('precursor', self._cursor)
         self._cursor = self._find(filter=self._filter, sort=self._sort, limit=self._limit)
-        print('cursor', self._cursor)
         return self._cursor
 
     def next(self):

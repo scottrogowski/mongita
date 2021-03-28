@@ -5,7 +5,7 @@ import pathlib
 
 import bson
 
-from .common import support_alert, Location, ok_name, MetaStorageObject
+from .common import support_alert, Location, ok_name, StorageObject
 from .command_cursor import CommandCursor
 from .database import Database
 from .errors import MongitaNotImplementedError, InvalidName
@@ -40,7 +40,7 @@ class MongitaClient(abc.ABC):
         if self._existence_verified:
             return
         if not self.engine.doc_exists(self._metadata_location):
-            metadata = MetaStorageObject({
+            metadata = StorageObject({
                 'options': {},
                 'database_names': [db_name],
                 'uuid': str(bson.ObjectId()),
@@ -70,7 +70,10 @@ class MongitaClient(abc.ABC):
             db = db.name
         location = Location(database=db)
         self.engine.delete_dir(location)
-        del self._cache[db]
+        try:
+            del self._cache[db]
+        except KeyError:
+            pass
 
 
 class MongitaClientLocal(MongitaClient):
@@ -81,14 +84,15 @@ class MongitaClientLocal(MongitaClient):
 
     def __repr__(self):
         path = self.engine.location
-        return "MongitaClient(storage=filesystem path=%s)" % path
+        return "MongitaClientLocal(path=%s)" % path
 
 
 class MongitaClientMemory(MongitaClient):
-    def __init__(self, bucket='mongita_storage'):
+    def __init__(self, strict=False):
+        # TODO strict
         self.engine = memory_engine.MemoryEngine()
         super().__init__()
 
     def __repr__(self):
         pid = multiprocessing.current_process().pid
-        return "MongitaClient(storage=memory pid=%s)" % pid
+        return "MongitaClientMemory(pid=%s)" % pid
