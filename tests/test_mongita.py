@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 import functools
 import os
 import sys
@@ -10,7 +10,7 @@ import pytest
 sys.path.append(os.getcwd().split('/tests')[0])
 
 import mongita
-from mongita import (MongitaClientMemory, MongitaClientLocal, ASCENDING, DESCENDING,
+from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDING,
                      errors, results, cursor, collection, command_cursor, database,
                      engines)
 from mongita.common import Location, StorageObject
@@ -30,6 +30,10 @@ TEST_DOCS = [
         'spotted': datetime(1994, 4, 23),
         'weight': 0.75,
         'continents': ['AF'],
+        'attrs': {
+            'colors': ['brown'],
+            'species': 'Suricata suricatta'
+        }
     },
     {
         'name': 'Indian grey mongoose',
@@ -38,6 +42,10 @@ TEST_DOCS = [
         'spotted': datetime(2003, 12, 1),
         'weight': 1.4,
         'continents': ['EA'],
+        'attrs': {
+            'colors': ['grey'],
+            'species': 'Herpestes edwardsii'
+        }
     },
     {
         'name': 'Honey Badger',
@@ -46,6 +54,10 @@ TEST_DOCS = [
         'spotted': datetime(1987, 2, 13),
         'weight': 10.0,
         'continents': ['EA', 'AF'],
+        'attrs': {
+            'colors': ['grey', 'black'],
+            'species': 'Mellivora capensis'
+        }
     },
     {
         'name': 'King Cobra',
@@ -54,6 +66,10 @@ TEST_DOCS = [
         'spotted': datetime(1997, 2, 22),
         'weight': 6.0,
         'continents': ['EA'],
+        'attrs': {
+            'colors': ['black', 'grey'],
+            'species': 'Ophiophagus hannah'
+        }
     },
     {
         'name': 'Secretarybird',
@@ -62,6 +78,10 @@ TEST_DOCS = [
         'spotted': datetime(1992, 7, 3),
         'weight': 4.0,
         'continents': ['AF'],
+        'attrs': {
+            'colors': ['white', 'black'],
+            'species': 'Sagittarius serpentarius'
+        }
     },
     {
         'name': 'Human',
@@ -69,12 +89,16 @@ TEST_DOCS = [
         'kingdom': 'mammal',
         'spotted': datetime(2021, 3, 25),
         'weight': 70.0,
-        'continents': ['NA', 'SA', 'EA', 'AF']
+        'continents': ['NA', 'SA', 'EA', 'AF'],
+        'attrs': {
+            'colors': 'brown',
+            'species': 'Homo sapien'
+        }
     }
 ]
 LEN_TEST_DOCS = len(TEST_DOCS)
 CLIENTS = (MongitaClientMemory,
-           )#functools.partial(MongitaClientLocal, '/tmp/mongita_unittests'))
+           functools.partial(MongitaClientDisk, '/tmp/mongita_unittests'))
 
 
 def setup_one(client_class):
@@ -109,6 +133,10 @@ def test_insert_one(client_class):
     assert isinstance(ior, results.InsertOneResult)
     assert isinstance(repr(ior), str)
     assert isinstance(ior.inserted_id, bson.ObjectId)
+
+    print(ior)
+    print(list(coll._find_ids({})))
+
     assert coll.count_documents({}) == 1
     assert coll.count_documents({'_id': ior.inserted_id}) == 1
     assert coll.find_one()['_id'] == ior.inserted_id
@@ -149,13 +177,15 @@ def test_insert_many(client_class):
     assert coll.count_documents({'_id': {'$in': imr.inserted_ids}}) == LEN_TEST_DOCS
 
     # Bad docs don't trigger. Ordered continues after errors
-    imr = coll.insert_many([{'_id': 5, 'reason': 'bad_id'}, {'this_doc_is': 'ok'},
-                            'string_instead_of_doc'])
-    assert len(imr.inserted_ids) == 0
-    imr = coll.insert_many([{'_id': 5, 'reason': 'bad_id'}, {'this_doc_is': 'ok'},
-                            'string_instead_of_doc'], ordered=False)
-    assert len(imr.inserted_ids) == 1
-    assert isinstance(imr.inserted_ids[0], bson.ObjectId)
+    coll.insert_one({'_id': 'id0'})
+    with pytest.raises(errors.PyMongoError):
+        imr = coll.insert_many([{'reason': 'duplicateid', '_id': 'id0'},
+                                {'reason': 'ok', '_id': 'id1'}])
+    assert not coll.find_one({'_id': 'id1'})
+    with pytest.raises(errors.PyMongoError):
+        imr = coll.insert_many([{'reason': 'duplicateid', '_id': 'id0'},
+                                {'reason': 'ok', '_id': 'id2'}], ordered=False)
+    assert coll.find_one({'_id': 'id2'})
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -188,21 +218,25 @@ def test_find_one(client_class):
 
     doc = coll.find_one()
     assert isinstance(doc, dict) and not isinstance(doc, StorageObject)
-    assert doc['name'] == 'Meercat'
     assert isinstance(doc['continents'], list)
     assert isinstance(doc['_id'], bson.objectid.ObjectId)
     del doc['_id']
-    assert doc == TEST_DOCS[0]
+    assert doc == [d for d in TEST_DOCS if d['name'] == doc['name']][0]
 
     doc = coll.find_one({'_id': imr.inserted_ids[1]})
     assert doc['name'] == 'Indian grey mongoose'
+    assert doc['attrs']['colors'][0] == 'grey'
+    assert doc['attrs']['species'].startswith('Herpestes')
+
+    # nested find
+    assert coll.find_one({'attrs.species': 'Homo sapien'})['name'] == 'Human'
 
     # bson or str should both work for _id lookups
     doc = coll.find_one({'_id': str(imr.inserted_ids[1])})
     assert doc['name'] == 'Indian grey mongoose'
 
     doc = coll.find_one({'family': 'Herpestidae'})
-    assert doc['name'] == 'Meercat'
+    assert doc['name'] in ('Meercat', 'Indian grey mongoose')
 
     doc = coll.find_one({'family': 'matters'})
     assert doc is None
@@ -232,8 +266,6 @@ def test_find(client_class):
     assert all(not isinstance(doc, StorageObject) for doc in docs)
     assert all(isinstance(doc['_id'], bson.objectid.ObjectId) for doc in docs)
     docs = list(coll.find())
-    assert docs[0]['name'] == 'Meercat'
-    assert docs[-1]['name'] == 'Human'
 
     doc_cursor = coll.find({'family': 'Herpestidae'})
     assert len(list(doc_cursor)) == 2
@@ -268,8 +300,6 @@ def test_cursor(client_class):
     assert isinstance(doc_cursor, cursor.Cursor)
     assert len(list(doc_cursor))
     assert not len(list(doc_cursor))  # cursor must be exhaused after one call
-
-    assert coll.find().next()['name'] == TEST_DOCS[0]['name']
 
     # not asc or desc
     with pytest.raises(errors.PyMongoError):
@@ -360,8 +390,8 @@ def test_replace_one(client_class):
         coll.replace_one()
     with pytest.raises(TypeError):
         coll.replace_one({'_id': 'a'})
-    doc = coll.find_one()
 
+    doc = coll.find_one({'name': TEST_DOCS[0]['name']})
     assert '_id' not in TEST_DOCS[1]
     ur = coll.replace_one({'_id': doc['_id']}, TEST_DOCS[1])
     assert '_id' not in TEST_DOCS[1]
@@ -389,6 +419,12 @@ def test_replace_one(client_class):
         ur = coll.replace_one({'name': 'Other mongoose'},
                               fake_mongoose,
                               upsert=True)
+
+    # fail gracefully
+    assert not coll.find_one({'name': 'not exists'})
+    ur = coll.replace_one({'name': 'not exists'}, {'kingdom': 'fake kingdom'})
+    assert ur.matched_count == 0
+    assert ur.modified_count == 0
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -434,14 +470,14 @@ def test_update_one(client_class):
         coll.update_one({}, ['name', 'Mongooose'])
     with pytest.raises(errors.PyMongoError):
         coll.update_one({}, {'$set': ['name', 'Mongooose']})
-    ur = coll.update_one({}, {'$set': {'name': 'Mongooose'}})
+
+    ur = coll.update_one({'name': 'Meercat'}, {'$set': {'name': 'Mongooose'}})
     assert isinstance(ur, results.UpdateResult)
     assert isinstance(repr(ur), str)
-    assert ur.matched_count == LEN_TEST_DOCS
+    assert ur.matched_count == 1
     assert ur.modified_count == 1
     assert ur.upserted_id is None
-    assert coll.find_one({'name': 'Mongoose'}) is None
-    assert coll.find_one({'name': 'Mongooose'})['_id'] == imr.inserted_ids[0]
+    assert coll.find_one({'name': 'Mongooose'})
     assert isinstance(imr.inserted_ids[0], bson.ObjectId)
 
     ur = coll.update_one({'kingdom': 'bird'}, {'$set': {'name': 'Pidgeotto'}})
@@ -459,18 +495,19 @@ def test_update_one(client_class):
     assert pidgeotto2['kingdom'] == 'reptile'
     assert pidgeotto2['_id'] == pidgeotto['_id']
 
-    ur = coll.update_one({'kingdom': 'mammal'}, {'$set': {'kingdom': 'reptile'}})
-    assert ur.matched_count == sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
+    tmp_doc_cnt = coll.count_documents({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}})
+    ur = coll.update_one({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}}, {'$set': {'kingdom': 'reptile'}})
+    assert ur.matched_count == tmp_doc_cnt
     assert ur.modified_count == 1
     assert coll.count_documents({'kingdom': 'reptile'}) == 3
-    assert set(d['name'] for d in coll.find({'kingdom': 'reptile'})) == \
-           set(['Mongooose', 'Pidgeotto', 'King Cobra'])
 
+    mongoose = coll.find_one({'name': 'Mongooose'})
+    mongoose_before_weight = mongoose['weight']
     ur = coll.update_one({'name': 'Mongooose'}, {'$inc': {'weight': -1}})
     assert ur.matched_count == 1
     assert ur.modified_count == 1
     mongoose = coll.find_one({'name': 'Mongooose'})
-    assert mongoose['weight'] == TEST_DOCS[0]['weight'] - 1
+    assert mongoose['weight'] == mongoose_before_weight - 1
 
     ur = coll.update_one({'name': 'fake'}, {'$set': {'name': 'Mngse'}})
     assert ur.matched_count == 0
@@ -540,10 +577,11 @@ def test_delete_one(client_class):
     assert isinstance(dor, results.DeleteResult)
     assert isinstance(repr(dor), str)
     assert dor.deleted_count == 1
-    assert coll.find_one({'_id': imr.inserted_ids[0]}) is None
-    dor = coll.delete_one({'_id': imr.inserted_ids[-1]})
+    remaining_ids = [d['_id'] for d in coll.find({})]
+    assert len(remaining_ids) == len(TEST_DOCS) - 1
+    dor = coll.delete_one({'_id': remaining_ids[-1]})
     assert dor.deleted_count == 1
-    dor = coll.delete_one({'_id': imr.inserted_ids[-1]})
+    dor = coll.delete_one({'_id': remaining_ids[-1]})
     assert dor.deleted_count == 0
     assert coll.count_documents({}) == LEN_TEST_DOCS - 2
 
@@ -661,7 +699,7 @@ def test_client(client_class):
     db = coll.database
     assert isinstance(repr(client), str)
     assert isinstance(db, database.Database)
-    assert isinstance(client.engine, engines.memory_engine.MemoryEngine)
+    assert isinstance(client.engine, engines.engine_common.Engine)
     assert client.list_database_names() == ['db']
     cc = client.list_databases()
     assert isinstance(cc, command_cursor.CommandCursor)
@@ -744,6 +782,15 @@ def test_indicies_basic(client_class):
     assert coll.count_documents({'kingdom': 'fish'}) == 0
     coll.drop_index(idx_name)
 
+    idx_name = coll.create_index([('kingdom', -1)])
+    assert idx_name == 'kingdom_-1'
+    assert coll.count_documents({'kingdom': 'mammal'}) == \
+        sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
+    assert coll.count_documents({'kingdom': 'reptile'}) == \
+        sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile')
+    assert coll.count_documents({'kingdom': 'fish'}) == 0
+    coll.drop_index(idx_name)
+
     idx_name = coll.create_index('kingdom')
     coll.drop_index('kingdom_1')
 
@@ -764,6 +811,7 @@ def test_indicies_filters(client_class):
     client, coll, imr = setup_many(client_class)
 
     coll.create_index('weight')
+    coll.create_index('kingdom')
     assert coll.count_documents({'weight': {'$eq': 6}}) == \
         sum(1 for d in TEST_DOCS if d['weight'] == 6)
     assert coll.count_documents({'weight': {'$ne': 6}}) == \
@@ -776,3 +824,80 @@ def test_indicies_filters(client_class):
         sum(1 for d in TEST_DOCS if d['weight'] > 6)
     assert coll.count_documents({'weight': {'$gte': 6}}) == \
         sum(1 for d in TEST_DOCS if d['weight'] >= 6)
+
+    assert coll.count_documents({'kingdom': {'$in': ['bird', 'reptile']}}) == \
+        sum(1 for d in TEST_DOCS if d['kingdom'] in ['bird', 'reptile'])
+    assert coll.count_documents({'kingdom': {'$nin': ['bird', 'reptile']}}) == \
+        sum(1 for d in TEST_DOCS if d['kingdom'] not in ['bird', 'reptile'])
+
+
+def test_close_memory():
+    """ Close on memory should delete everything """
+    client, coll, imr = setup_many(MongitaClientMemory)
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert client.engine._storage
+    client.close()
+    assert not client.engine._storage
+    assert coll.count_documents({}) == 0
+    assert set(coll.distinct('name')) == set()
+    client.close()
+    assert not client.engine._storage
+    client = MongitaClientMemory()
+    assert not client.engine._storage
+    assert client.db.snake_hunter.count_documents({}) == 0
+    assert set(coll.distinct('name')) == set()
+
+
+def test_close_disk():
+    """ Close on disk should delete only the cache """
+    client, coll, imr = setup_many(MongitaClientDisk)
+    assert client.engine._cache
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    client.close()
+    assert not client.engine._cache
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert client.engine._cache
+    assert set(coll.distinct('name')) == set(d['name'] for d in TEST_DOCS)
+    client.close()
+    assert not client.engine._cache
+    client = MongitaClientDisk()
+    assert not client.engine._cache
+    assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS
+    assert client.engine._cache
+    assert set(coll.distinct('name')) == set(d['name'] for d in TEST_DOCS)
+
+
+def test_strict():
+    client, coll, imr = setup_many(MongitaClientMemory)
+    assert not client.engine._strict
+
+    im = coll.insert_one({'reason': 'bad date', 'dt': date(2020, 1, 1)})
+    assert im.inserted_id
+    imr = coll.insert_many([{'reason': 'bad date', 'dt': date(2020, 1, 1)},
+                            {'reason': 'ok', 'dt': '2020-01-01'}])
+    assert len(imr.inserted_ids) == 2
+    client.close()
+
+    client = MongitaClientMemory(strict=True)
+    assert client.engine._strict
+    coll = client.db.snake_hunter
+    with pytest.raises(bson.errors.InvalidDocument):
+        coll.insert_one({'reason': 'bad date', 'dt': date(2020, 1, 1), 'myid': 0})
+    with pytest.raises(errors.PyMongoError):
+        coll.insert_many([{'reason': 'ok', 'dt': '2020-01-01', 'myid': 1},
+                          {'reason': 'bad date', 'dt': date(2020, 1, 1), 'myid': 2},
+                          {'reason': 'ok', 'dt': '2020-01-01', 'myid': 3}])
+    assert coll.count_documents({'myid': {'$in': [1, 3]}}) == 1
+    assert coll.count_documents({'myid': {'$in': [2]}}) == 0
+    with pytest.raises(errors.PyMongoError):
+        coll.insert_many([{'reason': 'ok', 'dt': '2020-01-01', 'myid': 4},
+                          {'reason': 'bad date', 'dt': date(2020, 1, 1), 'myid': 5},
+                          {'reason': 'ok', 'dt': '2020-01-01', 'myid': 6}], ordered=False)
+    assert coll.count_documents({'myid': {'$in': [4, 6]}}) == 2
+    assert coll.count_documents({'myid': {'$in': [5]}}) == 0
+
+
+
+    # imr = coll.insert_many([{'reason': 'bad date', 'dt': date(2020, 1, 1)},
+    #                         {'reason': 'ok', 'dt': '2020-01-01'}], ordered=False)
+

@@ -51,7 +51,8 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
 
 #### Currently implemented classes / methods:
 
-MongitaClientMemory / MongitaClientLocal / MongitaClientGCP
+MongitaClientMemory / MongitaClientLocal
+- close
 - list_database_names
 - list_databases
 - drop_database
@@ -125,8 +126,6 @@ Mongita is an *excellent* project for open source contributors. There is a lot t
 - find_one_and_... methods.
 - (Aggregation pipelines)[https://docs.mongodb.com/manual/reference/command/aggregate/].
 - More (cursor methods)[https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html]. Currently only sort, next, and limit are implemented.
-
-I would also like to add an S3 MongitaClient but that would require S3 to support something like GCP Cloud Storage's ["generations"](https://cloud.google.com/storage/docs/generations-preconditions). Generations allow for conditional PUTs to avoid overwriting objects in race conditions. It might also be possible for a clever developer to implement a lockfile mechanism using of objects. Specifically, I think it might be possible to "obtain" a lock by deleting an object and "release" it by putting it back.
 
 ### License
 

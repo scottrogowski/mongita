@@ -2,7 +2,7 @@ import bson
 
 from .collection import Collection
 from .command_cursor import CommandCursor
-from .common import support_alert, Location, ok_name, StorageObject
+from .common import support_alert, Location, ok_name, MetaStorageObject
 from .errors import MongitaNotImplementedError, InvalidName
 
 
@@ -45,18 +45,19 @@ class Database():
             return
         if not self._engine.doc_exists(self._metadata_location):
             self._engine.create_path(self._base_location)
-            metadata = StorageObject({
+            metadata = MetaStorageObject({
                 'options': {},
                 'collection_names': [coll_name],
                 'uuid': str(bson.ObjectId()),
             })
-            self._engine.upload_metadata(self._metadata_location, metadata)
+            assert self._engine.upload_metadata(self._metadata_location, metadata)
         self.client._create(self.name)
         self._existence_verified = True
 
     @support_alert
     def list_collection_names(self):
         metadata_tup = self._engine.download_metadata(self._metadata_location)
+        print(metadata_tup)
         if metadata_tup:
             return metadata_tup[0]['collection_names']
         return []

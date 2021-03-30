@@ -1,10 +1,8 @@
+import copy
 import functools
-import json
 import os
 import re
 import unicodedata
-import time
-
 
 import bson
 
@@ -83,7 +81,7 @@ class StorageObject(dict):
     def to_storage(self, strict=False):
         self.generation += 1
         if strict:
-            return int_to_bytes(self.generation) + bson.dumps(self)
+            return int_to_bytes(self.generation) + bson.encode(self)
         return self
 
     @staticmethod
@@ -93,6 +91,33 @@ class StorageObject(dict):
             doc = bson.decode(obj[8:])
             return StorageObject(doc, generation)
         return obj
+
+
+class MetaStorageObject(StorageObject):
+    def to_storage(self, strict=False):
+        self.generation += 1
+        if strict:
+            new_metadata = copy.deepcopy(self.__dict__)
+            if 'indexes' in new_metadata:
+                for idx_key in list(new_metadata['indexes'].keys()):
+                    new_metadata['indexes'][idx_key]['idx'] = list(self['indexes'][idx_key]['idx'].items())
+            return int_to_bytes(self.generation) + bson.encode(new_metadata)
+        return self
+
+    @staticmethod
+    def from_storage(obj, strict=False):
+        if strict:
+            generation = int_from_bytes(obj[:8])
+            doc = bson.decode(obj[8:])
+            so = MetaStorageObject(doc, generation)
+            so.decode_indexes()
+            return so
+        return obj
+
+    def decode_indexes(self):
+        if 'indexes' in self:
+            for idx_key in list(self['indexes'].keys()):
+                self['indexes'][idx_key]['idx'] = dict(self['indexes'][idx_key]['idx'])
 
 
 class Location():
@@ -107,7 +132,8 @@ class Location():
         self.database = database and _secure_filename(database)
         self.collection = collection and _secure_filename(collection)
         self._id = _id
-        self.path = os.path.join(*tuple(filter(None, (database, collection, _id and _secure_filename(str(_id))))))
+        # TODO secure _id
+        self.path = os.path.join(*tuple(filter(None, (database, collection, _id and str(_id)))))
 
     # @staticmethod
     # def from_path(self, path):

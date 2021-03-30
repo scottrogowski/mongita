@@ -7,7 +7,7 @@ from . import results
 
 mongita_client = mongita_client
 MongitaClientMemory = mongita_client.MongitaClientMemory
-MongitaClientLocal = mongita_client.MongitaClientLocal
+MongitaClientDisk = mongita_client.MongitaClientDisk
 
 database = database
 collection = collection

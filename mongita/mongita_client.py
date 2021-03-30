@@ -5,11 +5,11 @@ import pathlib
 
 import bson
 
-from .common import support_alert, Location, ok_name, StorageObject
+from .common import support_alert, Location, ok_name, MetaStorageObject
 from .command_cursor import CommandCursor
 from .database import Database
 from .errors import MongitaNotImplementedError, InvalidName
-from .engines import local_engine, memory_engine
+from .engines import disk_engine, memory_engine
 
 
 class MongitaClient(abc.ABC):
@@ -40,13 +40,17 @@ class MongitaClient(abc.ABC):
         if self._existence_verified:
             return
         if not self.engine.doc_exists(self._metadata_location):
-            metadata = StorageObject({
+            metadata = MetaStorageObject({
                 'options': {},
                 'database_names': [db_name],
                 'uuid': str(bson.ObjectId()),
             })
             self.engine.upload_metadata(self._metadata_location, metadata)
         self._existence_verified = True
+
+    @support_alert
+    def close(self):
+        self.engine.close()
 
     @support_alert
     def list_database_names(self):
@@ -76,21 +80,21 @@ class MongitaClient(abc.ABC):
             pass
 
 
-class MongitaClientLocal(MongitaClient):
+class MongitaClientDisk(MongitaClient):
     def __init__(self, bucket=os.path.join(pathlib.Path.home(),
                                            '.mongita_storage')):
-        self.engine = local_engine.LocalEngine(bucket)
+        self.engine = disk_engine.DiskEngine(bucket)
         super().__init__()
 
     def __repr__(self):
-        path = self.engine.location
-        return "MongitaClientLocal(path=%s)" % path
+        path = self.engine.base_storage_path
+        return "MongitaClientDisk(path=%s)" % path
 
 
 class MongitaClientMemory(MongitaClient):
     def __init__(self, strict=False):
-        # TODO strict
-        self.engine = memory_engine.MemoryEngine()
+        # TODO test strict
+        self.engine = memory_engine.MemoryEngine(strict)
         super().__init__()
 
     def __repr__(self):

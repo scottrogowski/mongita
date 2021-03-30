@@ -4,7 +4,7 @@ import time
 import bson
 
 from .cursor import Cursor
-from .common import support_alert, Location, ASCENDING, DESCENDING, StorageObject
+from .common import support_alert, Location, ASCENDING, DESCENDING, StorageObject, MetaStorageObject
 from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError, OperationFailure
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
 
@@ -95,16 +95,17 @@ def _doc_matches_agg(doc_v, agg):
 
 def _doc_matches_filter(doc, filter):
     for filter_k, filter_v in filter.items():
-        if filter_k not in doc:
-            return False
+        # TODO performant or not?
+        # if not _item_in_doc(doc, filter_k):
+        #     return False
 
         if isinstance(filter_v, dict):
-            doc_v = doc[filter_k]
+            doc_v = _get_item_from_doc(doc, filter_k)
             if _doc_matches_agg(doc_v, filter_v):
                 continue
             return False
 
-        if doc[filter_k] == filter_v:
+        if _get_item_from_doc(doc, filter_k) == filter_v:
             continue
         return False
     return True
@@ -121,10 +122,6 @@ def _doc_ids_match_filter_in_idx(doc_idx, filter_v):
     if not doc_idx['idx']:
         return set()
 
-    key_type = type(doc_idx['example_type'])
-    example_key = next(doc_idx['idx'].keys().__iter__())
-    if not isinstance(example_key, key_type):
-        doc_idx['idx'] = {key_type(k): v for k, v in doc_idx['idx'].items()}
     idx = doc_idx['idx']
 
     if isinstance(filter_v, dict):
@@ -172,6 +169,17 @@ def _apply_update(doc, update):
         # Should never get an update key we don't recognize b/c _validate_update
 
 
+# def _item_in_doc(doc, key):
+#     if '.' in key:
+#         item = doc
+#         levels = key.split('.')[:-1]
+#         last_level = key.split('.')[-1]
+#         for level in levels:
+#             item = item.get(level, {})
+#         return last_level in item
+#     return key in doc
+
+
 def _get_item_from_doc(doc, key):
     if '.' in key:
         item = doc
@@ -184,30 +192,11 @@ def _get_item_from_doc(doc, key):
 def _update_idx_doc_with_new_documents(documents, idx_doc):
     key_str = idx_doc['key_str']
     new_idx = collections.defaultdict(list, idx_doc['idx'])
-    example_type = key_type = None
-    if new_idx:
-        example_type = next(new_idx.keys().__iter__())
-        key_type = type(example_type)
-
-    if not example_type:
-        try:
-            doc = next(documents)
-        except StopIteration:
-            return
-        key = _get_item_from_doc(doc, key_str)
-        new_idx[key].append(str(doc['_id']))
-        example_type = key
-        key_type = type(example_type)
 
     for doc in documents:
         key = _get_item_from_doc(doc, key_str)
-        if not isinstance(key, key_type):
-            # TODO Nonetype keys
-            raise MongitaError("All index keys must be the same type. "
-                               f"For index '{key_str}', the type is '{key_type}'. "
-                               f"However, when building, a key arrived of type {type(key)}")
         new_idx[key].append(str(doc['_id']))
-    idx_doc['example_type'] = example_type
+
     reverse = idx_doc['direction'] == DESCENDING
     idx_doc['idx'] = dict(sorted(new_idx.items(), reverse=reverse))
 
@@ -266,7 +255,7 @@ class Collection():
             return
         if not self._engine.doc_exists(self._metadata_location):
             self._engine.create_path(self._base_location)
-            metadata = StorageObject({
+            metadata = MetaStorageObject({
                 'options': {},
                 'indexes': {},
                 '_id': str(bson.ObjectId()),
@@ -281,6 +270,7 @@ class Collection():
         success = self._engine.upload_doc(document_location, document,
                                           if_gen_match=True)
         if not success:
+            # TODO is this the only reason it would fail? I don't think so.
             raise DuplicateKeyError("Document %r already exists" % document['_id'])
 
     @support_alert
@@ -300,18 +290,14 @@ class Collection():
         :param list documents:
         :param bool ordered:
 
-        Insert documents. If ordered, stop inserting if there is an error
+        Insert documents. If ordered, stop inserting if there is an error.
+        If not ordered, all operations are attempted
         """
         if not isinstance(documents, list):
             raise MongitaError("Documents must be a list")
         ready_docs = []
         for doc in documents:
-            try:
-                _validate_doc(doc)
-            except MongitaError:
-                if ordered:
-                    break
-                continue
+            _validate_doc(doc)
             doc = StorageObject(doc)
             doc['_id'] = doc.get('_id') or bson.ObjectId()
             ready_docs.append(doc)
@@ -320,19 +306,23 @@ class Collection():
         metadata = self._checkout_metadata([d['_id'] for d in ready_docs], 'add')
         start = time.time()
         touch_idx = 1
+        exception = None
         for doc in ready_docs:
             try:
                 self._insert_one(doc)
                 success_docs.append(doc)
-            except MongitaError:
+            except Exception as ex:
                 if ordered:
                     self._update_indicies(success_docs, metadata)
-                    return InsertManyResult(success_docs)
+                    raise MongitaError("Ending insert_many because of error") from ex
+                exception = ex
                 continue
             if time.time() - start > touch_idx:
                 self._engine.touch_metadata(self._metadata_location)
                 touch_idx += 1
         self._update_indicies(success_docs, metadata)
+        if exception:
+            raise MongitaError("Not all documents inserted") from exception
         return InsertManyResult(success_docs)
 
     @support_alert
@@ -592,6 +582,7 @@ class Collection():
             if not metadata_tup:
                 return {}
             metadata, staleness = metadata_tup
+            # TODO this is where fixing the metadata happens.
             if 'updating_set' not in metadata:
                 return metadata
             if staleness < 2:
@@ -666,13 +657,13 @@ class Collection():
             'key_str': key_str,
             'direction': direction,
             'idx': {},
-            'example_type': None
         }
 
         metadata = self._checkout_metadata([], 'mod_idx')
         _update_idx_doc_with_new_documents(self._find({}, metadata=metadata), idx_doc)
         metadata['indexes'][idx_name] = idx_doc
         del metadata['updating_set']
+        print(metadata, type(metadata))
         success = self._engine.upload_metadata(self._metadata_location, metadata)
         if not success:
             raise OperationFailure("Could not create index")

@@ -1,7 +1,7 @@
 import threading
 import time
 
-from ..common import StorageObject
+from ..common import StorageObject, MetaStorageObject
 from .engine_common import Engine
 
 
@@ -40,10 +40,12 @@ class MemoryEngine(Engine):
                 if k.is_in_collection(collection_location):
                     ret.append(k._id)
             return ret
+        i = 0
         for k in self._storage.keys():
             if k.is_in_collection(collection_location):
                 ret.append(k._id)
-                if len(ret) == limit:
+                i += 1
+                if i == limit:
                     break
         return ret
 
@@ -66,7 +68,7 @@ class MemoryEngine(Engine):
             so_tup = self.download_metadata(location)
             if so_tup and so_tup[0].generation != doc.generation:
                 return False
-            self._storage[location] = (doc.to_storage(self._strict), time.time())
+            self._storage[location] = (doc.to_storage(), time.time())
         return True
 
     def download_metadata(self, location):
@@ -74,7 +76,7 @@ class MemoryEngine(Engine):
             obj, modified = self._storage[location]
         except KeyError:
             return None
-        obj = StorageObject.from_storage(obj, self._strict)
+        obj = MetaStorageObject.from_storage(obj)
         return obj, time.time() - modified
 
     def touch_metadata(self, location):
@@ -86,3 +88,6 @@ class MemoryEngine(Engine):
 
     def create_path(self, location):
         pass
+
+    def close(self):
+        self._storage = {}
