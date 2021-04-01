@@ -1,24 +1,31 @@
-TODO mongita mascot
+# Mongita 
 
-Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on the filesystem or simply in memory.
+![Mongita Baby Mongoose](assets/baby-mongita-mongoose.png)
 
-| "Mongita is to MongoDB as SQLite is to SQL"
+> "Mongita is to MongoDB as SQLite is to SQL"
 
-*Mongita is very much a project*. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
+![Version 0.0.1](https://img.shields.io/badge/version-0.0.1-red) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
 
-Applications:
-- Embedded database: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
-- Unit testing: Mocking PyMongo/MongoDB is a pain. Worse, mocking can hide real bugs. By monkey-patching PyMongo with Mongita, unit tests can be more faithful while remaining isolated.
+Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on disk or in-process memory.
+
+
+Mongita is *very much* a project. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
+
+### Applications
+- **Embedded database**: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one. It also has comparable performance.
+- **Unit testing**: Mocking PyMongo/MongoDB is a pain. Worse, mocking can hide real bugs. By monkey-patching PyMongo with Mongita, unit tests can be more faithful while remaining isolated.
  
-Design goals:
-- MongoDB compatibility: Mongita implements a commonly-used subset of the PyMongo API. This allows projects to be started with Mongita and later upgraded to MongoDB once they reach an appropriate scale.
-- Embedded/self-contained: Mongita does not require a server or run a process. It is just a Python library import - much like SQLite.
-- Thread and process safe: Mongita avoids race conditions by isolating certain document modification operations.
-- Limited dependencies: Mongita runs anywhere that Python runs. Currently the only dependency is PyMongo (for bson).
+### Design goals
+- **MongoDB compatibility**: Mongita implements a commonly-used subset of the PyMongo API. This allows projects to be started with Mongita and later upgraded to MongoDB once they reach an appropriate scale.
+- **Embedded/self-contained**: Mongita does not require a server or run a process. It is just a Python library. To use it, just add `import mongita` to the top of your script.
+- **Thread-safe**: Mongita avoids race conditions by isolating certain document modification operations.
+- **Limited dependencies**: Mongita runs anywhere that Python runs. Currently the only dependencies are PyMongo (for bson) and sortedcontainers (for fast indexes).
+- **Performant**: Mongita has comparable performance to MongoDB and Sqlite. In some cases, it is faster. See the performance section below.
 
-When NOT to use Mongita:
-- You need extreme speed: Mongita is fast enough for most use cases. If you are dealing with hundreds of transactions per second on your local machine, you probably want to use a standard MongoDB server.
-- You run a lot of uncommon commands: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
+### When NOT to use Mongita
+- **Your database has multiple clients**: Mongita is an embedded database. It is thread-safe but is not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
+- **You need extreme speed**: Mongita is fast. However, if you are dealing with hundreds of transactions per second, you probably want to use a standard MongoDB server.
+- **You run a lot of uncommon commands**: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
 
 ### Installation
 
@@ -26,91 +33,92 @@ When NOT to use Mongita:
 
 ###  Hello world
 
-    >>> from mongita import MongitaClientLocal
-    >>> client = MongitaClientLocal()
+    >>> from mongita import MongitaClientDisk
+    >>> client = MongitaClientDisk()
     >>> hello_world_db = client.hello_world_db
     >>> mongoose_types = hello_world_db.mongoose_types
-    >>> mongoose_types.insert_many([{'name': 'Meercat', 'favorite_food', 'Worms'})
+    >>> mongoose_types.insert_many([{'name': 'Meercat', 'favorite_food', 'Snakes'})
     InsertResult()
     >>> mongoose_types.count_documents()
     2
     >>> mongoose_types.update_one({'phrase_id': 1}, {'$set': {'hello': 'World!'}})
     UpdateResult()
     >>> mongoose_types.replace_one({'phrase_id': 1}, {'phrase_id': 1, 'HELLO': 'WORLD'}
-    ReplaceResult
+    ReplaceResult()
     >>> mongoose_types.find({'phrase_id': {'$gt': 1})
-    Cursor
+    Cursor()
     >>> list(coll.find({'phrase_id': {'$gt': 1}))
     [{'_id': 'a1b2c3d4e5f6', 'phrase_id': 2, 'foo': 'bar'}]
     >>> coll.delete_one({'phrase_id': 1})
-    DropResult
+    DropResult()
 
 ### API
 
 Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.html) for detailed syntax and behavior. Most named keyword parameters are *not implemented*. When something is not implemented, efforts are made to be loud and obvious about it.
 
-#### Currently implemented classes / methods:
+##### Currently implemented
 
-MongitaClientMemory / MongitaClientLocal
-- close
-- list_database_names
-- list_databases
-- drop_database
+**mongita.MongitaClientMemory / mongita.MongitaClientDisk** (([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/mongo_client.html)))
+mongita.MongitaClient.close()
+mongita.MongitaClient.list_database_names()
+mongita.MongitaClient.list_databases()
+mongita.MongitaClient.drop_database(name_or_database)
 
-Database
-- list_collection_names
-- list_collections
-- drop_collection
+**Database** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/database.html))
+mongita.Database.list_collection_names()
+mongita.Database.list_collections()
+mongita.Database.drop_collection(name_or_collection)
 
-Collection
-- insert_one
-- insert_many
-- find_one
-- find
-- replace_one
-- update_one
-- update_many
-- delete_one
-- delete_many
-- count_documents
-- distinct
-- create_index
-- drop_index
+**Collection** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html))
+mongita.Collection.insert_one(document)
+mongita.Collection.insert_many(documents, ordered=True)
+mongita.Collection.find_one(filter)
+mongita.Collection.find(filter)
+mongita.Collection.replace_one(filter, replacement, upsert=False)
+mongita.Collection.update_one(filter, update)
+mongita.Collection.update_many(filter, update)
+mongita.Collection.delete_one(filter)
+mongita.Collection.delete_many(filter)
+mongita.Collection.count_documents(filter)
+mongita.Collection.distinct(key, filter)
+mongita.Collection.create_index(keys)
+mongita.Collection.drop_index(index_or_name)
+mongita.Collection.index_information()
 
-Cursor
-- sort
-- next
-- limit
+**Cursor** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html))
+mongita.Cursor.sort(key_or_list, direction=None)
+mongita.Cursor.next()
+mongita.Cursor.limit(limit)
 
-errors
-- MongitaError 
-- PyMongoError (alias of MongitaError)
-- InvalidOperation
-- OperationFailure
-- DuplicateKeyError
-- MongitaNotImplementedError
+**errors** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/errors.html))
+mongita.errors.MongitaError (parent class of all errors)
+mongita.errors.PyMongoError (alias of MongitaError)
+mongita.errors.InvalidOperation
+mongita.errors.OperationFailure
+mongita.errors.DuplicateKeyError
+mongita.errors.MongitaNotImplementedError
 
-results
-- InsertOneResult
-- InsertManyResult
-- UpdateResult
-- DeleteResult
+**results** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/results.html))
+mongita.results.InsertOneResult
+mongita.results.InsertManyResult
+mongita.results.UpdateResult
+mongita.results.DeleteResult
 
-#### Currently implemented query operators
+##### Currently implemented query operators
 
-- $eq   
-- $gt   
-- $gte  
-- $in 
-- $lt 
-- $lte
-- $ne   
-- $nin 
+$eq   
+$gt   
+$gte  
+$in 
+$lt 
+$lte
+$ne   
+$nin 
 
-#### Currently implemented update operators
+##### Currently implemented update operators
 
-- $set
-- $inc
+$set
+$inc
 
 ### Performance
 
@@ -124,8 +132,8 @@ Mongita is an *excellent* project for open source contributors. There is a lot t
 - More [update operators](https://docs.mongodb.com/manual/reference/operator/update/#id1). Currently, only $set and $inc are implemented.
 - More [query operators](https://docs.mongodb.com/manual/reference/operator/query/). Currently, only the "comparison operators" are implemented.
 - find_one_and_... methods.
-- (Aggregation pipelines)[https://docs.mongodb.com/manual/reference/command/aggregate/].
-- More (cursor methods)[https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html]. Currently only sort, next, and limit are implemented.
+- [Aggregation pipelines](https://docs.mongodb.com/manual/reference/command/aggregate/).
+- More [cursor methods](https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html). Currently only sort, next, and limit are implemented.
 
 ### License
 
@@ -134,3 +142,5 @@ BSD 3-clause. Mongita is free and open source for any purpose with basic restric
 ### History
 
 Mongita was started as a component of the [fastmap server](https://github.com/fastmap-io). [Fastmap](https://fastmap.io) offloads and parallelizes arbitrary Python functions on the cloud.
+
+

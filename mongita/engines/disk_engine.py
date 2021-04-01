@@ -1,8 +1,6 @@
 import fcntl
-import pathlib
 import os
 import shutil
-import time
 
 import bson
 
@@ -12,13 +10,8 @@ from .engine_common import Engine
 # TODO https://filelock.readthedocs.io/en/latest/
 
 
-def _get_mod_time(full_path):
-    return int(os.path.getmtime(full_path) * 1000000)
-
-
 class DiskEngine(Engine):
-    def __init__(self, base_storage_path, single_client=False):
-        # TODO single_client
+    def __init__(self, base_storage_path):
         if not os.path.exists(base_storage_path):
             os.mkdir(base_storage_path)
         self.base_storage_path = base_storage_path
@@ -39,14 +32,16 @@ class DiskEngine(Engine):
                     fcntl.lockf(f, fcntl.LOCK_UN)
                     return False
                 f.seek(0)
-                f.write(doc.to_storage(True))  # TODO existing_generation + 1
+                f.write(doc.to_storage(strict=True))  # TODO existing_generation + 1
+                f.truncate()
                 fcntl.lockf(f, fcntl.LOCK_UN)
             self._cache[location] = doc
             return True
 
         with open(full_path, 'wb') as f:
             fcntl.lockf(f, fcntl.LOCK_EX)
-            f.write(doc.to_storage(True))
+            f.write(doc.to_storage(strict=True))
+            f.truncate()
             fcntl.lockf(f, fcntl.LOCK_UN)
             self._cache[location] = doc
         return True
@@ -62,27 +57,20 @@ class DiskEngine(Engine):
         doc_from_cache = self._cache.get(location)
         with open(full_path, 'rb+') as f:
             fcntl.lockf(f, fcntl.LOCK_EX)
-            mod_time = _get_mod_time(full_path)
             existing_generation = int_from_bytes(f.read(8))
             if doc_from_cache and doc_from_cache.generation == existing_generation:
-                return doc_from_cache, time.time() - mod_time
-            doc = bson.decode(f.read())
+                return doc_from_cache
+            encoded = f.read()
+            doc = bson.decode(encoded)
             fcntl.lockf(f, fcntl.LOCK_UN)
 
         so = MetaStorageObject(doc, existing_generation)
         so.decode_indexes()
         self._cache[location] = so
-        return so, time.time() - mod_time
-
-    def touch_metadata(self, location):
-        full_path = self._get_full_path(location)
-        pathlib.Path(full_path).touch()
-        return True
+        return so
 
     def download_doc(self, location):
         full_path = self._get_full_path(location)
-        if not os.path.exists(full_path):
-            return None
 
         doc_from_cache = self._cache.get(location)
         with open(full_path, 'rb+') as f:
@@ -99,30 +87,23 @@ class DiskEngine(Engine):
 
     def delete_doc(self, location):
         full_path = self._get_full_path(location)
-        try:
-            os.remove(full_path)
-        except FileNotFoundError:
-            return False
-        try:
-            del self._cache[location]
-        except KeyError:
-            pass
+        os.remove(full_path)
+        del self._cache[location]
         return True
 
     def delete_dir(self, location):
         full_path = self._get_full_path(location)
         if not os.path.isdir(full_path):
             return False
-        try:
-            shutil.rmtree(full_path)
-        except OSError:
-            return False
+        shutil.rmtree(full_path)
         for k in list(self._cache.keys()):
             if k.is_in_collection_incl_metadata(location):
                 del self._cache[k]
         return True
 
     def doc_exists(self, location):
+        if location in self._cache:
+            return True
         full_path = self._get_full_path(location)
         return os.path.exists(full_path)
 

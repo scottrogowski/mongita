@@ -14,10 +14,8 @@ class Database():
         self.name = db_name
         self.client = client
         self._engine = client.engine
-        self._existence_verified = False
         self._base_location = Location(database=db_name)
-        self._metadata_location = Location(database=db_name,
-                                           _id='$.metadata')
+        self._metadata_location = Location(database=db_name, _id='$.metadata')
         self._cache = {}
 
     def __repr__(self):
@@ -41,25 +39,26 @@ class Database():
             return coll
 
     def _create(self, coll_name):
-        if self._existence_verified:
+        metadata = self._engine.download_metadata(self._metadata_location)
+        if metadata:
+            if coll_name not in metadata['collection_names']:
+                metadata['collection_names'].append(coll_name)
+                assert self._engine.upload_metadata(self._metadata_location, metadata)
             return
-        if not self._engine.doc_exists(self._metadata_location):
-            self._engine.create_path(self._base_location)
-            metadata = MetaStorageObject({
-                'options': {},
-                'collection_names': [coll_name],
-                'uuid': str(bson.ObjectId()),
-            })
-            assert self._engine.upload_metadata(self._metadata_location, metadata)
+        self._engine.create_path(self._base_location)
+        metadata = MetaStorageObject({
+            'options': {},
+            'collection_names': [coll_name],
+            'uuid': str(bson.ObjectId()),
+        })
+        assert self._engine.upload_metadata(self._metadata_location, metadata)
         self.client._create(self.name)
-        self._existence_verified = True
 
     @support_alert
     def list_collection_names(self):
-        metadata_tup = self._engine.download_metadata(self._metadata_location)
-        print(metadata_tup)
-        if metadata_tup:
-            return metadata_tup[0]['collection_names']
+        metadata = self._engine.download_metadata(self._metadata_location)
+        if metadata:
+            return metadata['collection_names']
         return []
 
     @support_alert
@@ -67,7 +66,7 @@ class Database():
         def cursor():
             for coll_name in self.list_collection_names():
                 if coll_name not in self._cache:
-                    self._cache[coll_name] = Database(coll_name, self)
+                    self._cache[coll_name] = Collection(coll_name, self)
                 yield self._cache[coll_name]
         return CommandCursor(cursor())
 
@@ -77,6 +76,10 @@ class Database():
             collection = collection.name
         location = Location(database=self.name, collection=collection)
         self._engine.delete_dir(location)
+        metadata = self._engine.download_metadata(self._metadata_location)
+        if metadata and collection in metadata['collection_names']:
+            metadata['collection_names'].remove(collection)
+            assert self._engine.upload_metadata(self._metadata_location, metadata)
         try:
             del self._cache[collection]
         except KeyError:

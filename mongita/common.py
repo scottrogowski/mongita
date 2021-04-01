@@ -30,6 +30,8 @@ def _secure_filename(filename: str) -> str:
     # on nt a couple of special files are present in each folder.  We
     # have to ensure that the target file is not such a filename.  In
     # this case we prepend an underline
+    # TODO we won't need this at all if we have only one file open per collection
+    # and it will be faster too. Let's let this be for now.
     if (
         os.name == "nt"
         and filename
@@ -97,7 +99,7 @@ class MetaStorageObject(StorageObject):
     def to_storage(self, strict=False):
         self.generation += 1
         if strict:
-            new_metadata = copy.deepcopy(self.__dict__)
+            new_metadata = copy.deepcopy(self)
             if 'indexes' in new_metadata:
                 for idx_key in list(new_metadata['indexes'].keys()):
                     new_metadata['indexes'][idx_key]['idx'] = list(self['indexes'][idx_key]['idx'].items())

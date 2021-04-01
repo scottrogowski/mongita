@@ -42,26 +42,26 @@ class Cursor():
         """
         return next(self._gen())
 
-    def sort(self, *args):
+    def sort(self, key_or_list, direction=None):
         """
         https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html
         """
         if self._cursor:
             raise InvalidOperation("Cursor has already started and can't be sorted")
 
-        if len(args) == 1 and isinstance(args[0], (list, tuple)) \
-           and all(isinstance(tup, (list, tuple)) and len(tup) == 2 for tup in args[0]):
-            self._sort = args[0]
-        elif len(args) == 1 and isinstance(args[0], str):
-            self._sort = [(args[0], ASCENDING)]
-        elif len(args) == 2 and isinstance(args[0], str) and isinstance(args[1], int):
-            self._sort = [(args[0], args[1])]
+        if direction is None and isinstance(key_or_list, (list, tuple)) \
+           and all(isinstance(tup, (list, tuple)) and len(tup) == 2 for tup in key_or_list):
+            self._sort = key_or_list
+        elif direction is None and isinstance(key_or_list, str):
+            self._sort = [(key_or_list, ASCENDING)]
+        elif isinstance(key_or_list, str) and isinstance(direction, int):
+            self._sort = [(key_or_list, direction)]
         else:
-            raise MongitaError("Unsupported sort parameter format %r. See the docs." % str(args))
-        for k, direction in self._sort:
+            raise MongitaError("Unsupported sort parameter format. See the docs.")
+        for k, v_direction in self._sort:
             if not isinstance(k, str):
-                raise MongitaError("Sort key(s) must be strings %r" % str(args))
-            if direction not in (ASCENDING, DESCENDING):
+                raise MongitaError("Sort key(s) must be strings %r" % str(key_or_list))
+            if v_direction not in (ASCENDING, DESCENDING):
                 raise MongitaError("Sort direction(s) must be either ASCENDING (1) or DESCENDING (-1). Not %r" % direction)
         return self
 

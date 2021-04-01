@@ -11,13 +11,14 @@ from .database import Database
 from .errors import MongitaNotImplementedError, InvalidName
 from .engines import disk_engine, memory_engine
 
+DEFAULT_STORAGE_DIR = os.path.join(pathlib.Path.home(), '.mongita_storage')
+
 
 class MongitaClient(abc.ABC):
     UNIMPLEMENTED = ['HOST', 'PORT', 'address', 'arbiters', 'close', 'close_cursor', 'codec_options', 'database_names', 'event_listeners', 'fsync', 'get_database', 'get_default_database', 'is_locked', 'is_mongos', 'is_primary', 'kill_cursors', 'local_threshold_ms', 'max_bson_size', 'max_idle_time_ms', 'max_message_size', 'max_pool_size', 'max_write_batch_size', 'min_pool_size', 'next', 'nodes', 'primary', 'read_concern', 'read_preference', 'retry_reads', 'retry_writes', 'secondaries', 'server_info', 'server_selection_timeout', 'set_cursor_manager', 'start_session', 'unlock', 'watch', 'write_concern']
     __metaclass__ = abc.ABCMeta
 
     def __init__(self):
-        self._existence_verified = False
         self._metadata_location = Location(_id='$.metadata')
         self._cache = {}
 
@@ -37,16 +38,18 @@ class MongitaClient(abc.ABC):
             return db
 
     def _create(self, db_name):
-        if self._existence_verified:
+        metadata = self.engine.download_metadata(self._metadata_location)
+        if metadata:
+            if db_name not in metadata['database_names']:
+                metadata['database_names'].append(db_name)
+                assert self.engine.upload_metadata(self._metadata_location, metadata)
             return
-        if not self.engine.doc_exists(self._metadata_location):
-            metadata = MetaStorageObject({
-                'options': {},
-                'database_names': [db_name],
-                'uuid': str(bson.ObjectId()),
-            })
-            self.engine.upload_metadata(self._metadata_location, metadata)
-        self._existence_verified = True
+        metadata = MetaStorageObject({
+            'options': {},
+            'database_names': [db_name],
+            'uuid': str(bson.ObjectId()),
+        })
+        assert self.engine.upload_metadata(self._metadata_location, metadata)
 
     @support_alert
     def close(self):
@@ -54,9 +57,9 @@ class MongitaClient(abc.ABC):
 
     @support_alert
     def list_database_names(self):
-        metadata_tup = self.engine.download_metadata(self._metadata_location)
-        if metadata_tup:
-            return metadata_tup[0]['database_names']
+        metadata = self.engine.download_metadata(self._metadata_location)
+        if metadata:
+            return metadata['database_names']
         return []
 
     @support_alert
@@ -69,20 +72,26 @@ class MongitaClient(abc.ABC):
         return CommandCursor(cursor())
 
     @support_alert
-    def drop_database(self, db):
-        if isinstance(db, Database):
-            db = db.name
-        location = Location(database=db)
+    def drop_database(self, name_or_database):
+        if isinstance(name_or_database, Database):
+            db_name = name_or_database.name
+        else:
+            db_name = name_or_database
+
+        metadata = self.engine.download_metadata(self._metadata_location)
+        if metadata and name_or_database in metadata['database_names']:
+            metadata['database_names'].remove(name_or_database)
+            assert self.engine.upload_metadata(self._metadata_location, metadata)
+        location = Location(database=db_name)
         self.engine.delete_dir(location)
         try:
-            del self._cache[db]
+            del self._cache[db_name]
         except KeyError:
             pass
 
 
 class MongitaClientDisk(MongitaClient):
-    def __init__(self, bucket=os.path.join(pathlib.Path.home(),
-                                           '.mongita_storage')):
+    def __init__(self, bucket=DEFAULT_STORAGE_DIR):
         self.engine = disk_engine.DiskEngine(bucket)
         super().__init__()
 

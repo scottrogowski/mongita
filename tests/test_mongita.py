@@ -15,10 +15,6 @@ from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDI
                      engines)
 from mongita.common import Location, StorageObject
 
-TEST_DIR = 'mongita_unittest_storage'
-
-if os.path.exists(TEST_DIR):
-    shutil.rmtree(TEST_DIR)
 
 # TODO test multi-level finds / inserts / etc
 
@@ -96,14 +92,20 @@ TEST_DOCS = [
         }
     }
 ]
-LEN_TEST_DOCS = len(TEST_DOCS)
-CLIENTS = (MongitaClientMemory,
-           functools.partial(MongitaClientDisk, '/tmp/mongita_unittests'))
 
+TEST_DIR = '/tmp/mongita_unittests'
+_MongitaClientDisk = functools.partial(MongitaClientDisk, TEST_DIR)
+LEN_TEST_DOCS = len(TEST_DOCS)
+CLIENTS = (MongitaClientMemory, _MongitaClientDisk)
+
+def remove_test_dir():
+    if os.path.exists(TEST_DIR):
+        shutil.rmtree(TEST_DIR)
 
 def setup_one(client_class):
+    remove_test_dir()
+    assert not os.path.exists(TEST_DIR)
     client = client_class()
-    client.drop_database('db')
     coll = client.db.snake_hunter
     ior = coll.insert_one(TEST_DOCS[0])
     assert '_id' not in TEST_DOCS[0]
@@ -111,8 +113,9 @@ def setup_one(client_class):
 
 
 def setup_many(client_class):
+    remove_test_dir()
+    assert not os.path.exists(TEST_DIR)
     client = client_class()
-    client.drop_database('db')
     coll = client.db.snake_hunter
     imr = coll.insert_many(TEST_DOCS)
     assert not any(['_id' in d for d in TEST_DOCS])
@@ -133,9 +136,6 @@ def test_insert_one(client_class):
     assert isinstance(ior, results.InsertOneResult)
     assert isinstance(repr(ior), str)
     assert isinstance(ior.inserted_id, bson.ObjectId)
-
-    print(ior)
-    print(list(coll._find_ids({})))
 
     assert coll.count_documents({}) == 1
     assert coll.count_documents({'_id': ior.inserted_id}) == 1
@@ -305,6 +305,10 @@ def test_cursor(client_class):
     with pytest.raises(errors.PyMongoError):
         list(coll.find().sort('weight', 2))
 
+    # pass in a string
+    with pytest.raises(errors.PyMongoError):
+        list(coll.find().sort('weight', "ASCENDING"))
+
     sorted_docs = list(coll.find().sort('weight'))
     assert sorted_docs[0]['name'] == 'Meercat'
     assert sorted_docs[-1]['name'] == 'Human'
@@ -351,14 +355,13 @@ def test_cursor(client_class):
     doc_cursor = coll.find().sort('name')
     assert next(doc_cursor)['name'] == 'Honey Badger'
     assert next(doc_cursor)['name'] == 'Human'
+    assert doc_cursor.next()['name'] == 'Indian grey mongoose'
 
     # sorting shouldn't happen after iteration has begun
     with pytest.raises(errors.InvalidOperation):
         doc_cursor.sort('kingdom')
 
     # test bad format
-    with pytest.raises(errors.PyMongoError):
-        coll.find().sort('kingdom', ASCENDING, True)
     with pytest.raises(errors.PyMongoError):
         coll.find().sort([(ASCENDING, 'kingdom')])
 
@@ -758,6 +761,51 @@ def test_common(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
+def test_two_dbs_and_collections(client_class):
+    client, coll, imr = setup_many(client_class)
+    client.db.snakes_on_a_plane.insert_one({'motherfucking': 'snakes'})
+    assert len(client.db.list_collection_names()) == 2
+    assert 'snakes_on_a_plane' in client.db.list_collection_names()
+    assert client.db.snakes_on_a_plane.count_documents({}) == 1
+
+    client.test_db.snakes_on_a_plane.insert_one({'motherfucking': 'plane'})
+    assert len(client.list_database_names()) == 2
+    assert 'test_db' in client.list_database_names()
+    assert client.test_db.snakes_on_a_plane.count_documents({}) == 1
+    client.drop_database('test_db')
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_not_real_drops(client_class):
+    client = client_class()
+    client.drop_database('not_real')
+    client.db.drop_collection('not_real')
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_list_dbs_collections(client_class):
+    remove_test_dir()
+    client = client_class()
+    assert len(list(client.list_databases())) == 0
+    assert len(list(client.db.list_collections())) == 0
+    assert len(list(client.list_databases())) == 0
+
+    client.db.coll.insert_one({'test': 'test'})
+    client.close()
+
+    client = client_class()
+    if isinstance(client, MongitaClientMemory):
+        expected_cnt = 0
+    else:
+        expected_cnt = 1
+
+    assert len(list(client.list_databases())) == expected_cnt
+    assert len(list(client.db.list_collections())) == expected_cnt
+    assert len(list(client.list_databases())) == expected_cnt
+
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
 def test_indicies_basic(client_class):
     client, coll, imr = setup_many(client_class)
     with pytest.raises(mongita.errors.PyMongoError):
@@ -775,6 +823,8 @@ def test_indicies_basic(client_class):
 
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
+    assert len(coll.index_information()) == 2
+    coll.index_information()[1] == {'kingdom_1': {'key': [('kingdom', 1)]}}
     assert coll.count_documents({'kingdom': 'mammal'}) == \
         sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
     assert coll.count_documents({'kingdom': 'reptile'}) == \
@@ -789,6 +839,14 @@ def test_indicies_basic(client_class):
     assert coll.count_documents({'kingdom': 'reptile'}) == \
         sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile')
     assert coll.count_documents({'kingdom': 'fish'}) == 0
+
+    assert coll.insert_one(TEST_DOCS[0]).inserted_id
+    assert coll.count_documents({'kingdom': 'mammal'}) == \
+        sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal') + 1
+    assert coll.delete_one({'kingdom': 'reptile'}).deleted_count == 1
+    assert coll.count_documents({'kingdom': 'reptile'}) == \
+        sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile') - 1
+
     coll.drop_index(idx_name)
 
     idx_name = coll.create_index('kingdom')
@@ -830,41 +888,83 @@ def test_indicies_filters(client_class):
     assert coll.count_documents({'kingdom': {'$nin': ['bird', 'reptile']}}) == \
         sum(1 for d in TEST_DOCS if d['kingdom'] not in ['bird', 'reptile'])
 
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.count_documents({'weight': {'$eqq': 6}})
+
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.count_documents({'kingdom': {'$in': 'bird'}})
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.count_documents({'kingdom': {'$nin': 'bird'}})
+
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_thread_safe(client_class):
+    # TODO
+    pass
 
 def test_close_memory():
     """ Close on memory should delete everything """
     client, coll, imr = setup_many(MongitaClientMemory)
     assert coll.count_documents({}) == LEN_TEST_DOCS
-    assert client.engine._storage
+    assert client.engine._cache
     client.close()
-    assert not client.engine._storage
+    assert not client.engine._cache
     assert coll.count_documents({}) == 0
     assert set(coll.distinct('name')) == set()
     client.close()
-    assert not client.engine._storage
+    assert not client.engine._cache
     client = MongitaClientMemory()
-    assert not client.engine._storage
+    assert not client.engine._cache
     assert client.db.snake_hunter.count_documents({}) == 0
     assert set(coll.distinct('name')) == set()
 
 
 def test_close_disk():
     """ Close on disk should delete only the cache """
-    client, coll, imr = setup_many(MongitaClientDisk)
+    client, coll, imr = setup_many(_MongitaClientDisk)
     assert client.engine._cache
     assert coll.count_documents({}) == LEN_TEST_DOCS
+    coll.create_index('kingdom')
     client.close()
     assert not client.engine._cache
+    assert len(list(client.list_databases())) == 1
+    assert len(list(client.db.list_collections())) == 1
     assert coll.count_documents({}) == LEN_TEST_DOCS
     assert client.engine._cache
     assert set(coll.distinct('name')) == set(d['name'] for d in TEST_DOCS)
     client.close()
     assert not client.engine._cache
-    client = MongitaClientDisk()
+    client = _MongitaClientDisk()
     assert not client.engine._cache
     assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS
     assert client.engine._cache
     assert set(coll.distinct('name')) == set(d['name'] for d in TEST_DOCS)
+    client.close()
+
+    # remove the whole thing. It should get recreated
+    shutil.rmtree(TEST_DIR)
+    client = _MongitaClientDisk()
+    assert not client.engine._cache
+    assert client.db.snake_hunter.count_documents({}) == 0
+    dor = client.db.snake_hunter.delete_one({'_id': 'fake_id'})
+    assert dor.deleted_count == 0
+
+
+def test_graceful_deletion():
+    client, coll, imr = setup_many(_MongitaClientDisk)
+    assert coll.find_one({'_id': imr.inserted_ids[0]})
+    assert len(list(coll.find({}))) == LEN_TEST_DOCS
+    client.close()
+
+    shutil.rmtree(TEST_DIR)
+    client = _MongitaClientDisk()
+    assert list(client.list_databases()) == []
+    coll = client.db.snake_hunter
+    assert not coll.find_one({'_id': imr.inserted_ids[0]})
+    dor = coll.delete_one({'_id': imr.inserted_ids[1]})
+    assert dor.deleted_count == 0
+    assert coll.count_documents({}) == 0
 
 
 def test_strict():
@@ -895,6 +995,12 @@ def test_strict():
                           {'reason': 'ok', 'dt': '2020-01-01', 'myid': 6}], ordered=False)
     assert coll.count_documents({'myid': {'$in': [4, 6]}}) == 2
     assert coll.count_documents({'myid': {'$in': [5]}}) == 0
+
+    coll.create_index("weight")
+    client.close()
+    client = MongitaClientMemory(strict=True)
+    coll = client.db.snake_hunter
+    assert len(coll.index_information()) == 1
 
 
 

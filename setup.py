@@ -10,8 +10,8 @@ if sys.version_info[:2] < (3, 7):
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-with open(os.path.join("mongita", "lib.py")) as f:
-    version = re.search(r"^CLIENT_VERSION \= \"([0-9.]+)\"", f.read(),
+with open(os.path.join("mongita", "__init__.py")) as f:
+    version = re.search(r"^VERSION \= \"([0-9.]+)\"", f.read(),
                         re.MULTILINE).group(1)
 
 url_base = "https://github.com/mongita/mongita"
@@ -35,6 +35,7 @@ setuptools.setup(
     ],
     python_requires='>=3.6',
     install_requires=[
-        'pymongo>=3.11,<4.0'
+        'pymongo>=3.11,<4.0',
+        'sortedcontainers>=2.3,<3.0'
     ],
 )
