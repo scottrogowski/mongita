@@ -102,7 +102,6 @@ class MongitaClientDisk(MongitaClient):
 
 class MongitaClientMemory(MongitaClient):
     def __init__(self, strict=False):
-        # TODO test strict
         self.engine = memory_engine.MemoryEngine(strict)
         super().__init__()
 

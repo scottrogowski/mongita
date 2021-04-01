@@ -5,6 +5,7 @@ import re
 import unicodedata
 
 import bson
+import sortedcontainers
 
 from .errors import MongitaError
 
@@ -119,7 +120,7 @@ class MetaStorageObject(StorageObject):
     def decode_indexes(self):
         if 'indexes' in self:
             for idx_key in list(self['indexes'].keys()):
-                self['indexes'][idx_key]['idx'] = dict(self['indexes'][idx_key]['idx'])
+                self['indexes'][idx_key]['idx'] = sortedcontainers.SortedDict(self['indexes'][idx_key]['idx'])
 
 
 class Location():
@@ -134,18 +135,8 @@ class Location():
         self.database = database and _secure_filename(database)
         self.collection = collection and _secure_filename(collection)
         self._id = _id
-        # TODO secure _id
+        # TODO make _id safe for localfiles. Probably not an issue after one-file support
         self.path = os.path.join(*tuple(filter(None, (database, collection, _id and str(_id)))))
-
-    # @staticmethod
-    # def from_path(self, path):
-    #     parts = path.split('/')
-    #     assert len(parts) <= 3
-    #     return Location(*parts)
-
-    # @property
-    # def fake_path(self):
-    #     return self.path.replace('/', '/')
 
     def parent_path(self):
         return os.path.join(*tuple(filter(None, (self.database, self.collection))))

@@ -2,6 +2,8 @@ import collections
 
 import bson
 import sortedcontainers
+import functools
+import operator
 
 from .cursor import Cursor
 from .common import support_alert, Location, ASCENDING, DESCENDING, StorageObject, MetaStorageObject
@@ -95,10 +97,6 @@ def _doc_matches_agg(doc_v, agg):
 
 def _doc_matches_filter(doc, filter):
     for filter_k, filter_v in filter.items():
-        # TODO performant or not?
-        # if not _item_in_doc(doc, filter_k):
-        #     return False
-
         if isinstance(filter_v, dict):
             doc_v = _get_item_from_doc(doc, filter_k)
             if _doc_matches_agg(doc_v, filter_v):
@@ -111,6 +109,18 @@ def _doc_matches_filter(doc, filter):
     return True
 
 
+def idx_fltr_keys(matched_keys, idx, **kwargs):
+    if matched_keys is not None:
+        return matched_keys.intersection(set(idx.irange(**kwargs)))
+    return set(idx.irange(**kwargs))
+
+
+def idx_filter_sort(tup):
+    k, _ = tup
+    return (k == '$eq',
+            k in ('$lt', '$lte', '$gt', '$gte'))
+
+
 def _doc_ids_match_filter_in_idx(doc_idx, filter_v):
     """
     :param doc_idx {key: [ObjectId, ...]}:
@@ -118,32 +128,37 @@ def _doc_ids_match_filter_in_idx(doc_idx, filter_v):
     :rtype: set
     """
     idx = doc_idx['idx']
+    matched_keys = None
     if isinstance(filter_v, dict):
-        idx_keys = list(idx.keys())
-        for agg_k, agg_v in filter_v.items():
-            if agg_k == '$in':
+        for agg_k, agg_v in sorted(filter_v.items(),
+                                   key=idx_filter_sort, reverse=True):
+            if agg_k == '$eq':
+                matched_keys = set((agg_v,)) if agg_v in (matched_keys or idx.keys()) else set()
+            elif agg_k == '$ne':
+                matched_keys = set(k for k in matched_keys or idx.keys() if k != agg_v)
+            elif agg_k == '$lt':
+                matched_keys = idx_fltr_keys(matched_keys, idx,
+                                             maximum=agg_v, inclusive=(False, False))
+            elif agg_k == '$lte':
+                matched_keys = idx_fltr_keys(matched_keys, idx,
+                                             maximum=agg_v, inclusive=(True, True))
+            elif agg_k == '$gt':
+                matched_keys = idx_fltr_keys(matched_keys, idx,
+                                             minimum=agg_v, inclusive=(False, False))
+            elif agg_k == '$gte':
+                matched_keys = idx_fltr_keys(matched_keys, idx,
+                                             minimum=agg_v, inclusive=(True, True))
+            elif agg_k == '$in':
                 if not isinstance(agg_v, (list, tuple, set)):
                     raise MongitaError("'$in' requires an iterable")
-                idx_keys = [k for k in idx_keys if k in agg_v]
+                matched_keys = set(k for k in matched_keys or idx.keys() if k in agg_v)
             elif agg_k == '$nin':
                 if not isinstance(agg_v, (list, tuple, set)):
                     raise MongitaError("'$nin' requires an iterable")
-                idx_keys = [k for k in idx_keys if k not in agg_v]
-            elif agg_k == '$eq':
-                idx_keys = [k for k in idx_keys if k == agg_v]
-            elif agg_k == '$ne':
-                idx_keys = [k for k in idx_keys if k != agg_v]
-            elif agg_k == '$lt':
-                idx_keys = [k for k in idx_keys if k < agg_v]
-            elif agg_k == '$lte':
-                idx_keys = [k for k in idx_keys if k <= agg_v]
-            elif agg_k == '$gt':
-                idx_keys = [k for k in idx_keys if k > agg_v]
-            elif agg_k == '$gte':
-                idx_keys = [k for k in idx_keys if k >= agg_v]
-            # validation if done earlier
+                matched_keys = set(k for k in matched_keys or idx.keys() if k not in agg_v)
+            # validation of options is done earlier
         ret = set()
-        for k in idx_keys:
+        for k in matched_keys:
             ret.update(idx[k])
         return ret
     return set(idx.get(filter_v, set()))
@@ -169,9 +184,6 @@ def _get_item_from_doc(doc, key):
 
 
 def _update_idx_doc_with_new_documents(documents, idx_doc):
-# TODO sortedcontainers.SortedDict
-    # functools.reduce(operator.iconcat, (weights[el] for el in weights.irange(None,8)))
-
     key_str = idx_doc['key_str']
     new_idx = sortedcontainers.SortedDict(idx_doc['idx'])
 
@@ -180,7 +192,7 @@ def _update_idx_doc_with_new_documents(documents, idx_doc):
         new_idx.setdefault(key, []).append(doc['_id'])
 
     reverse = idx_doc['direction'] == DESCENDING
-    idx_doc['idx'] = dict(sorted(new_idx.items(), reverse=reverse))
+    idx_doc['idx'] = sortedcontainers.SortedDict(sorted(new_idx.items(), reverse=reverse))
 
 
 def _remove_docs_from_idx_doc(doc_ids, idx_doc):
@@ -387,7 +399,6 @@ class Collection():
                     return
                 doc_ids_from_all_idx_filters.append(doc_ids)
             doc_ids = set.intersection(*doc_ids_from_all_idx_filters)
-            # TODO do we need to check if these exist? Hypothetically no but things may get corrupted.
         else:
             doc_ids = self._engine.list_ids(self._base_location)
 

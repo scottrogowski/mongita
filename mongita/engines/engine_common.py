@@ -1,49 +1,7 @@
 import abc
 
 
-
 class Engine(abc.ABC):
-    """
-    Base class of every storage engine. This implements nothing.
-    TODO lots of shit can be thrown from GCP / AWS and even from the filesystem.
-    If we can't read or write, what do we do?
-    Also, what can we do to ensure consistency? It's not a huge deal if some
-    documents fail to upload as long as we throw an error. If those documents don't
-    get into the index though, that is a bigger deal. Maybe we can make our first
-    write after acquiring a lock something like "scheduled_update_index". Then, if we
-    fail partway through, we can rebuild the index.
-
-    After we delete the lockfile, we need to be doing something to make it clear
-    that we are still working for long tasks. Maybe we can do something like updating
-    the timestamp of a file?
-
-    I could put this online with just the memory / memory+local options which
-    won't require all of this nonsense because we control the process but that
-    certainly doesn't solve this thing I started it all for.
-
-
-
-    Options:
-    - def acquire_lock. Perhaps try three times to acquire the lock before timeout.
-        disadvantage is speed
-
-    We acquire the lock by deleting the file.
-    Then we upload a file that signifies the lock start
-    Other clients get a 404 while we do our thing.
-    We die
-    Before the final timeout the client checks the lock start file
-    Lock start file is old.
-
-    We use the lock start file as our new lock and delete it.
-
-    (other processes might upload a new lock file during this and the command
-     might complete before we are done. Shit.)
-
-
-
-
-    """
-
     @abc.abstractmethod
     def upload_doc(self, location, doc, generation=None):
         """
@@ -78,15 +36,13 @@ class Engine(abc.ABC):
         """
 
     @abc.abstractmethod
-    def list_ids(self, prefix, limit, metadata):
+    def list_ids(self, collection_location, limit=None):
         """
-        :param prefix Location: Location obj|
+        :param collection_location Location: Location obj|
         :param limit int:
-        :param bool metadata:
         :rtype: list[str]
 
         Given a Location without an _id, return a list of _ids.
-        If metadata is true, include metadata.
         """
 
     @abc.abstractmethod
@@ -114,7 +70,33 @@ class Engine(abc.ABC):
         :rtype: bool
 
         Prepare a path. Only used by local_engine
+        """
 
+    @abc.abstractmethod
+    def upload_metadata(self, location, doc):
+        """
+        :param location Location: Location obj
+        :param doc dict:
+        :rtype: bool
+
+        Upload a metadata doc. Metadata is different because of how indexes
+        are stored.
+        """
+
+    @abc.abstractmethod
+    def download_metadata(self, location):
+        """
+        :param location Location: Location obj
+        :rtype: dict
+
+        Download a metadata doc. Metadata is different because of how indexes
+        are stored.
+        """
+
+    @abc.abstractmethod
+    def close(self):
+        """
+        Delete all local cache to free memory
         """
 
     def find_one_id(self, prefix):

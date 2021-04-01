@@ -12,7 +12,7 @@ Mongita is a lightweight embedded document database that implements a commonly-u
 Mongita is *very much* a project. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
 
 ### Applications
-- **Embedded database**: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one. It also has comparable performance.
+- **Embedded database**: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
 - **Unit testing**: Mocking PyMongo/MongoDB is a pain. Worse, mocking can hide real bugs. By monkey-patching PyMongo with Mongita, unit tests can be more faithful while remaining isolated.
  
 ### Design goals
@@ -20,11 +20,11 @@ Mongita is *very much* a project. Please report any bugs. Anticipate breaking ch
 - **Embedded/self-contained**: Mongita does not require a server or run a process. It is just a Python library. To use it, just add `import mongita` to the top of your script.
 - **Thread-safe**: Mongita avoids race conditions by isolating certain document modification operations.
 - **Limited dependencies**: Mongita runs anywhere that Python runs. Currently the only dependencies are PyMongo (for bson) and sortedcontainers (for fast indexes).
-- **Performant**: Mongita has comparable performance to MongoDB and Sqlite. In some cases, it is faster. See the performance section below.
+- **Performance**: Mongita is only a little slower than MongoDB and Sqlite. See the performance section below.
 
 ### When NOT to use Mongita
 - **Your database has multiple clients**: Mongita is an embedded database. It is thread-safe but is not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
-- **You need extreme speed**: Mongita is fast. However, if you are dealing with hundreds of transactions per second, you probably want to use a standard MongoDB server.
+- **You need extreme speed**: Mongita is fast enough in most cases. However, if you are dealing with hundreds of transactions per second, you might want to use a standard MongoDB server.
 - **You run a lot of uncommon commands**: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
 
 ### Installation
@@ -124,6 +124,8 @@ $inc
 
 Results from a side-by-side comparison on the same machine (MacBook Pro mid-2016)
 
+Mongita is slightly slower than MongoDb and SQLite in benchmarks. 
+
 TODO memory / local / pymongo+mongodb
 
 ### Contributing
@@ -143,4 +145,10 @@ BSD 3-clause. Mongita is free and open source for any purpose with basic restric
 
 Mongita was started as a component of the [fastmap server](https://github.com/fastmap-io). [Fastmap](https://fastmap.io) offloads and parallelizes arbitrary Python functions on the cloud.
 
+### Similar projects
 
+As sometimes happens, I found these when I was nearing completion on the first
+version. However, in my tests with these, I found that they were missing some functionality I would consider important (e.g. indexes).
+
+- [TinyMongo](https://github.com/schapman1974/tinymongo)
+- [MontyDb](https://github.com/davidlatwe/montydb)

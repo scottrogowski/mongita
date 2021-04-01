@@ -900,7 +900,7 @@ def test_indicies_filters(client_class):
 
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_thread_safe(client_class):
-    # TODO
+    # TODO test thread safe
     pass
 
 def test_close_memory():

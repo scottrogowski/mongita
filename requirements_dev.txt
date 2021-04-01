@@ -1,5 +1,6 @@
 # Mongita requirements
 pymongo>=3.11,<4.0
+sortedcontainers>=2.3,<3.0
 
 # Testing
 pytest>=6.0.2,<6.1
