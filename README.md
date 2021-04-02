@@ -1,5 +1,7 @@
 # Mongita 
 
+THIS IS IN PROGRESS BUT IT IS CLOSE. DO NOT USE JUST YET.
+
 ![Mongita Baby Mongoose](assets/baby-mongita-mongoose.png)
 
 > "Mongita is to MongoDB as SQLite is to SQL"
