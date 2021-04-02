@@ -3,6 +3,7 @@ import functools
 import os
 import sys
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 
 import bson
 import pytest
@@ -896,12 +897,37 @@ def test_indicies_filters(client_class):
     with pytest.raises(mongita.errors.PyMongoError):
         coll.count_documents({'kingdom': {'$nin': 'bird'}})
 
+# TODO all of the different ways to insert, update, replace, delete documents
+# and validating that the indicies stay solid
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_thread_safe(client_class):
-    # TODO test thread safe
-    pass
+    remove_test_dir()
+    client = client_class()
+    def insert_one(doc):
+        print("inserting %d" % doc['i'])
+        try:
+            client.db.snake_hunter.insert_one(doc)
+        except:
+            # TODO I think what is happening is that I'm getting excepts
+            # and not uploading all of the files. If this is to be thread-safe,
+            # I need to have built-in retries for modifying docs and metadata
+            # This could be like the GIL so that only one thread can do a write
+            # operation at a time.
+            print("EXCEPT!!")
+
+    docs = [dict(d) for d in TEST_DOCS * 8]
+    for i, doc in enumerate(docs):
+        doc['i'] = i
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(insert_one, docs)
+    for doc in docs:
+        print(doc['i'])
+        assert client.db.snake_hunter.find_one({'i': i})
+    assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS * 8
+    assert client.db.snake_hunter.count_documents({'name': 'Human'}) == 8
+
 
 def test_close_memory():
     """ Close on memory should delete everything """

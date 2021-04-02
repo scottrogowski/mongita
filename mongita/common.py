@@ -81,15 +81,15 @@ class StorageObject(dict):
         self.generation = generation
         super().__init__(doc)
 
-    def to_storage(self, strict=False):
+    def to_storage(self, as_bson=False):
         self.generation += 1
-        if strict:
+        if as_bson:
             return int_to_bytes(self.generation) + bson.encode(self)
         return self
 
     @staticmethod
-    def from_storage(obj, strict=False):
-        if strict:
+    def from_storage(obj, as_bson=False):
+        if as_bson:
             generation = int_from_bytes(obj[:8])
             doc = bson.decode(obj[8:])
             return StorageObject(doc, generation)
@@ -97,9 +97,9 @@ class StorageObject(dict):
 
 
 class MetaStorageObject(StorageObject):
-    def to_storage(self, strict=False):
+    def to_storage(self, as_bson=False):
         self.generation += 1
-        if strict:
+        if as_bson:
             new_metadata = copy.deepcopy(self)
             if 'indexes' in new_metadata:
                 for idx_key in list(new_metadata['indexes'].keys()):
@@ -108,8 +108,8 @@ class MetaStorageObject(StorageObject):
         return self
 
     @staticmethod
-    def from_storage(obj, strict=False):
-        if strict:
+    def from_storage(obj, as_bson=False):
+        if as_bson:
             generation = int_from_bytes(obj[:8])
             doc = bson.decode(obj[8:])
             so = MetaStorageObject(doc, generation)

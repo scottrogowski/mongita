@@ -1,6 +1,7 @@
 import fcntl
 import os
 import shutil
+import threading
 
 import bson
 
@@ -16,12 +17,15 @@ class DiskEngine(Engine):
             os.mkdir(base_storage_path)
         self.base_storage_path = base_storage_path
         self._cache = {}
+        self.lock = threading.RLock()
 
     def _get_full_path(self, location):
         # TODO assert path is not relative.
         return os.path.join(self.base_storage_path, location.path)
 
     def upload_doc(self, location, doc, if_gen_match=False):
+        name = doc.get('i')
+        print("uploading %s" % name)
         full_path = self._get_full_path(location)
 
         if if_gen_match and self.doc_exists(location):
@@ -30,20 +34,23 @@ class DiskEngine(Engine):
                 existing_generation = int_from_bytes(f.read(8))
                 if existing_generation > doc.generation:
                     fcntl.lockf(f, fcntl.LOCK_UN)
+                    print("existing_generation != !!!!!")
                     return False
                 f.seek(0)
-                f.write(doc.to_storage(strict=True))  # TODO existing_generation + 1
+                f.write(doc.to_storage(as_bson=True))  # TODO existing_generation + 1
                 f.truncate()
                 fcntl.lockf(f, fcntl.LOCK_UN)
             self._cache[location] = doc
+            # print("count in cache1 %d" % sum(1 for k in self._cache.keys() if not 'metadata' in k.path))
             return True
 
         with open(full_path, 'wb') as f:
             fcntl.lockf(f, fcntl.LOCK_EX)
-            f.write(doc.to_storage(strict=True))
+            f.write(doc.to_storage(as_bson=True))
             f.truncate()
             fcntl.lockf(f, fcntl.LOCK_UN)
             self._cache[location] = doc
+            print("count in cache2 (%s) %d" % (name, sum(1 for k in self._cache.keys() if not 'metadata' in k.path)))
         return True
 
     def upload_metadata(self, location, doc):
@@ -92,13 +99,14 @@ class DiskEngine(Engine):
         return True
 
     def delete_dir(self, location):
-        full_path = self._get_full_path(location)
-        if not os.path.isdir(full_path):
-            return False
-        shutil.rmtree(full_path)
-        for k in list(self._cache.keys()):
-            if k.is_in_collection_incl_metadata(location):
-                del self._cache[k]
+        with self.lock:
+            full_path = self._get_full_path(location)
+            if not os.path.isdir(full_path):
+                return False
+            shutil.rmtree(full_path)
+            for k in list(self._cache.keys()):
+                if k.is_in_collection_incl_metadata(location):
+                    del self._cache[k]
         return True
 
     def doc_exists(self, location):
@@ -108,10 +116,12 @@ class DiskEngine(Engine):
         return os.path.exists(full_path)
 
     def list_ids(self, collection_location, limit=None):
+        print("listing %s" % collection_location)
         assert collection_location.is_collection()
 
         full_path = self._get_full_path(collection_location)
         if not os.path.exists(full_path):
+            print("listed0 0")
             return []
 
         ret = []
@@ -119,6 +129,8 @@ class DiskEngine(Engine):
             for _id in os.listdir(full_path):
                 if not _id.startswith('$'):
                     ret.append(_id)
+            print("listed1 %d" % len(ret))
+            print('count in cache list_ids %d' % sum(1 for k in self._cache.keys() if not 'metadata' in k.path))
             return ret
         i = 0
         for _id in os.listdir(full_path):
@@ -127,6 +139,8 @@ class DiskEngine(Engine):
                 i += 1
                 if i == limit:
                     break
+        print("listed2 %d" % len(ret))
+        print('count in cache list_ids %d' % sum(1 for k in self._cache.keys() if not 'metadata' in k.path))
         return ret
 
     def create_path(self, location):

@@ -8,17 +8,16 @@ class MemoryEngine(Engine):
     def __init__(self, strict=False):
         self._strict = strict
         self._cache = {}
-        self._lock = threading.RLock()
+        self.lock = threading.RLock()
 
     def upload_doc(self, location, doc, if_gen_match=False):
         if if_gen_match:
-            with self._lock:
-                so = self.download_doc(location)
-                if so and so.generation != doc.generation:
-                    return False
-                self._cache[location] = doc.to_storage(strict=self._strict)
-                return True
-        self._cache[location] = doc.to_storage(strict=self._strict)
+            so = self.download_doc(location)
+            if so and so.generation != doc.generation:
+                return False
+            self._cache[location] = doc.to_storage(as_bson=self._strict)
+            return True
+        self._cache[location] = doc.to_storage(as_bson=self._strict)
         return True
 
     def download_doc(self, location):
@@ -26,7 +25,7 @@ class MemoryEngine(Engine):
             obj = self._cache[location]
         except KeyError:
             return None
-        return StorageObject.from_storage(obj, strict=self._strict)
+        return StorageObject.from_storage(obj, as_bson=self._strict)
 
     def doc_exists(self, location):
         return location in self._cache
@@ -53,18 +52,17 @@ class MemoryEngine(Engine):
         return True
 
     def delete_dir(self, location):
-        with self._lock:
+        with self.lock:
             for k in list(self._cache.keys()):
                 if k.is_in_collection_incl_metadata(location):
                     del self._cache[k]
         return True
 
     def upload_metadata(self, location, doc):
-        with self._lock:
-            so_tup = self.download_metadata(location)
-            if so_tup:
-                assert so_tup.generation == doc.generation
-            self._cache[location] = doc.to_storage(strict=self._strict)
+        so_tup = self.download_metadata(location)
+        if so_tup:
+            assert so_tup.generation == doc.generation
+        self._cache[location] = doc.to_storage(as_bson=self._strict)
         return True
 
     def download_metadata(self, location):
@@ -72,7 +70,7 @@ class MemoryEngine(Engine):
             obj = self._cache[location]
         except KeyError:
             return None
-        obj = MetaStorageObject.from_storage(obj, strict=self._strict)
+        obj = MetaStorageObject.from_storage(obj, as_bson=self._strict)
         return obj
 
     def create_path(self, location):

@@ -247,15 +247,16 @@ class Collection():
     def _create(self):
         if self._existence_verified:
             return
-        if not self._engine.doc_exists(self._metadata_location):
-            self._engine.create_path(self._base_location)
-            metadata = MetaStorageObject({
-                'options': {},
-                'indexes': {},
-                '_id': str(bson.ObjectId()),
-            })
-            assert self._engine.upload_metadata(self._metadata_location, metadata)
-        self.database._create(self.name)
+        with self._engine.lock:
+            if not self._engine.doc_exists(self._metadata_location):
+                self._engine.create_path(self._base_location)
+                metadata = MetaStorageObject({
+                    'options': {},
+                    'indexes': {},
+                    '_id': str(bson.ObjectId()),
+                })
+                assert self._engine.upload_metadata(self._metadata_location, metadata)
+            self.database._create(self.name)
         self._existence_verified = True
 
     def _insert_one(self, document):
@@ -264,6 +265,7 @@ class Collection():
                                           if_gen_match=True)
         if not success:
             # TODO is this the only reason it would fail? I don't think so.
+            print("duplicate key or something")
             raise DuplicateKeyError("Document %r already exists" % document['_id'])
 
     @support_alert
@@ -272,9 +274,10 @@ class Collection():
         document = StorageObject(document)
         document['_id'] = document.get('_id') or bson.ObjectId()
         self._create()
-        metadata = self._get_metadata()
-        self._insert_one(document)
-        self._update_indicies([document], metadata)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            self._insert_one(document)
+            self._update_indicies([document], metadata)
         return InsertOneResult(document['_id'])
 
     @support_alert
@@ -296,19 +299,20 @@ class Collection():
             ready_docs.append(doc)
         self._create()
         success_docs = []
-        metadata = self._get_metadata()
         exception = None
-        for doc in ready_docs:
-            try:
-                self._insert_one(doc)
-                success_docs.append(doc)
-            except Exception as ex:
-                if ordered:
-                    self._update_indicies(success_docs, metadata)
-                    raise MongitaError("Ending insert_many because of error") from ex
-                exception = ex
-                continue
-        self._update_indicies(success_docs, metadata)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            for doc in ready_docs:
+                try:
+                    self._insert_one(doc)
+                    success_docs.append(doc)
+                except Exception as ex:
+                    if ordered:
+                        self._update_indicies(success_docs, metadata)
+                        raise MongitaError("Ending insert_many because of error") from ex
+                    exception = ex
+                    continue
+            self._update_indicies(success_docs, metadata)
         if exception:
             raise MongitaError("Not all documents inserted") from exception
         return InsertManyResult(success_docs)
@@ -325,15 +329,19 @@ class Collection():
         doc_id = self._find_one_id(filter)
         if not doc_id:
             if upsert:
-                replacement['_id'] = replacement.get('_id') or bson.ObjectId()
-                self._insert_one(replacement)
+                with self._engine.lock:
+                    metadata = self._get_metadata()
+                    replacement['_id'] = replacement.get('_id') or bson.ObjectId()
+                    self._insert_one(replacement)
+                    self._update_indicies([replacement], metadata)
                 return UpdateResult(0, 1, replacement['_id'])
             return UpdateResult(0, 0)
         replacement['_id'] = doc_id
-        metadata = self._get_metadata()
-        assert self._engine.upload_doc(self._get_location(doc_id), replacement)
-        self._update_indicies([replacement], metadata)
-        return UpdateResult(1, 1)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            assert self._engine.upload_doc(self._get_location(doc_id), replacement)
+            self._update_indicies([replacement], metadata)
+            return UpdateResult(1, 1)
 
     def _find_one_id(self, filter):
         """
@@ -476,9 +484,10 @@ class Collection():
         matched_count = len(doc_ids)
         if not matched_count:
             return UpdateResult(matched_count, 0)
-        metadata = self._get_metadata()
-        doc = self._update_doc(doc_ids[0], update)
-        self._update_indicies([doc], metadata)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            doc = self._update_doc(doc_ids[0], update)
+            self._update_indicies([doc], metadata)
         return UpdateResult(matched_count, 1)
 
     @support_alert
@@ -492,12 +501,13 @@ class Collection():
         success_docs = []
         matched_cnt = 0
         doc_ids = list(self._find_ids(filter))
-        metadata = self._get_metadata()
-        for doc_id in doc_ids:
-            doc = self._update_doc(doc_id, update)
-            success_docs.append(doc)
-            matched_cnt += 1
-        self._update_indicies(success_docs, metadata)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            for doc_id in doc_ids:
+                doc = self._update_doc(doc_id, update)
+                success_docs.append(doc)
+                matched_cnt += 1
+            self._update_indicies(success_docs, metadata)
         return UpdateResult(matched_cnt, len(success_docs))
 
     @support_alert
@@ -510,9 +520,10 @@ class Collection():
             return DeleteResult(0)
 
         loc = self._get_location(doc_id)
-        self._engine.delete_doc(loc)
-        metadata = self._get_metadata()
-        self._update_indicies_deletes([doc_id], metadata)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            self._engine.delete_doc(loc)
+            self._update_indicies_deletes([doc_id], metadata)
         return DeleteResult(1)
 
     @support_alert
@@ -521,12 +532,13 @@ class Collection():
         self._create()
 
         doc_ids = list(self._find_ids(filter))
-        metadata = self._get_metadata()
         success_deletes = []
-        for doc_id in doc_ids:
-            if self._engine.delete_doc(self._get_location(doc_id)):
-                success_deletes.append(doc_id)
-        self._update_indicies_deletes(success_deletes, metadata)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            for doc_id in doc_ids:
+                if self._engine.delete_doc(self._get_location(doc_id)):
+                    success_deletes.append(doc_id)
+            self._update_indicies_deletes(success_deletes, metadata)
         return DeleteResult(len(success_deletes))
 
     @support_alert
@@ -590,10 +602,11 @@ class Collection():
             'idx': {},
         }
 
-        metadata = self._get_metadata()
-        _update_idx_doc_with_new_documents(self._find({}, metadata=metadata), idx_doc)
-        metadata['indexes'][idx_name] = idx_doc
-        assert self._engine.upload_metadata(self._metadata_location, metadata)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            _update_idx_doc_with_new_documents(self._find({}, metadata=metadata), idx_doc)
+            metadata['indexes'][idx_name] = idx_doc
+            assert self._engine.upload_metadata(self._metadata_location, metadata)
         return idx_name
 
     @support_alert
@@ -612,9 +625,10 @@ class Collection():
         except ValueError:
             raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
 
-        metadata = self._get_metadata()
-        del metadata['indexes'][index_or_name]
-        assert self._engine.upload_metadata(self._metadata_location, metadata)
+        with self._engine.lock:
+            metadata = self._get_metadata()
+            del metadata['indexes'][index_or_name]
+            assert self._engine.upload_metadata(self._metadata_location, metadata)
 
     @support_alert
     def index_information(self):
