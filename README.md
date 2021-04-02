@@ -10,7 +10,6 @@ THIS IS IN PROGRESS BUT IT IS CLOSE. DO NOT USE JUST YET.
 
 Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on disk or in-process memory.
 
-
 Mongita is *very much* a project. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
 
 ### Applications
@@ -58,74 +57,79 @@ Mongita is *very much* a project. Please report any bugs. Anticipate breaking ch
 
 Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.html) for detailed syntax and behavior. Most named keyword parameters are *not implemented*. When something is not implemented, efforts are made to be loud and obvious about it.
 
-##### Currently implemented
-
 **mongita.MongitaClientMemory / mongita.MongitaClientDisk** (([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/mongo_client.html)))
-mongita.MongitaClient.close()
-mongita.MongitaClient.list_database_names()
-mongita.MongitaClient.list_databases()
-mongita.MongitaClient.drop_database(name_or_database)
+
+    mongita.MongitaClient.close()
+    mongita.MongitaClient.list_database_names()
+    mongita.MongitaClient.list_databases()
+    mongita.MongitaClient.drop_database(name_or_database)
 
 **Database** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/database.html))
-mongita.Database.list_collection_names()
-mongita.Database.list_collections()
-mongita.Database.drop_collection(name_or_collection)
+
+    mongita.Database.list_collection_names()
+    mongita.Database.list_collections()
+    mongita.Database.drop_collection(name_or_collection)
 
 **Collection** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html))
-mongita.Collection.insert_one(document)
-mongita.Collection.insert_many(documents, ordered=True)
-mongita.Collection.find_one(filter, sort)
-mongita.Collection.find(filter, sort, limit)
-mongita.Collection.replace_one(filter, replacement, upsert=False)
-mongita.Collection.update_one(filter, update)
-mongita.Collection.update_many(filter, update)
-mongita.Collection.delete_one(filter)
-mongita.Collection.delete_many(filter)
-mongita.Collection.count_documents(filter)
-mongita.Collection.distinct(key, filter)
-mongita.Collection.create_index(keys)
-mongita.Collection.drop_index(index_or_name)
-mongita.Collection.index_information()
+
+    mongita.Collection.insert_one(document)
+    mongita.Collection.insert_many(documents, ordered=True)
+    mongita.Collection.find_one(filter, sort)
+    mongita.Collection.find(filter, sort, limit)
+    mongita.Collection.replace_one(filter, replacement, upsert=False)
+    mongita.Collection.update_one(filter, update)
+    mongita.Collection.update_many(filter, update)
+    mongita.Collection.delete_one(filter)
+    mongita.Collection.delete_many(filter)
+    mongita.Collection.count_documents(filter)
+    mongita.Collection.distinct(key, filter)
+    mongita.Collection.create_index(keys)
+    mongita.Collection.drop_index(index_or_name)
+    mongita.Collection.index_information()
 
 **Cursor** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html))
-mongita.Cursor.sort(key_or_list, direction=None)
-mongita.Cursor.next()
-mongita.Cursor.limit(limit)
-mongita.Cursor.close()
+
+    mongita.Cursor.sort(key_or_list, direction=None)
+    mongita.Cursor.next()
+    mongita.Cursor.limit(limit)
+    mongita.Cursor.close()
 
 **CommandCursor** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/command_cursor.html))
-mongita.CommandCursor.next()
-mongita.CommandCursor.close()
+
+    mongita.CommandCursor.next()
+    mongita.CommandCursor.close()
 
 **errors** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/errors.html))
-mongita.errors.MongitaError (parent class of all errors)
-mongita.errors.PyMongoError (alias of MongitaError)
-mongita.errors.InvalidOperation
-mongita.errors.OperationFailure
-mongita.errors.DuplicateKeyError
-mongita.errors.MongitaNotImplementedError
+    
+    mongita.errors.MongitaError (parent class of all errors)
+    mongita.errors.PyMongoError (alias of MongitaError)
+    mongita.errors.InvalidOperation
+    mongita.errors.OperationFailure
+    mongita.errors.DuplicateKeyError
+    mongita.errors.MongitaNotImplementedError
 
 **results** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/results.html))
-mongita.results.InsertOneResult
-mongita.results.InsertManyResult
-mongita.results.UpdateResult
-mongita.results.DeleteResult
 
-##### Currently implemented query operators
+    mongita.results.InsertOneResult
+    mongita.results.InsertManyResult
+    mongita.results.UpdateResult
+    mongita.results.DeleteResult
 
-$eq   
-$gt   
-$gte  
-$in 
-$lt 
-$lte
-$ne   
-$nin 
+**Currently implemented query operators**
 
-##### Currently implemented update operators
+    $eq
+    $gt
+    $gte
+    $in
+    $lt
+    $lte
+    $ne
+    $nin
 
-$set
-$inc
+**Currently implemented update operators**
+
+    $set
+    $inc
 
 ### Performance
 
@@ -140,7 +144,7 @@ TODO memory / local / pymongo+mongodb
 Mongita is an *excellent* project for open source contributors. There is a lot to do and it is easy to get started. In particular, the following tasks are high in priority:
 - More [update operators](https://docs.mongodb.com/manual/reference/operator/update/#id1). Currently, only $set and $inc are implemented.
 - More [query operators](https://docs.mongodb.com/manual/reference/operator/query/). Currently, only the "comparison operators" are implemented.
-- find_one_and_... methods.
+- [find_one_and_...](https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html#pymongo.collection.Collection.find_one_and_replace) methods.
 - [Aggregation pipelines](https://docs.mongodb.com/manual/reference/command/aggregate/).
 - More [cursor methods](https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html). Currently only sort, next, and limit are implemented.
 
