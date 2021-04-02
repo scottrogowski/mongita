@@ -2,6 +2,31 @@ from .errors import MongitaNotImplementedError, MongitaError, InvalidOperation
 from .common import ASCENDING, DESCENDING, support_alert
 
 
+def _validate_sort(key_or_list, direction=None):
+    """
+    Validate kwargs and return a proper sort list
+
+    :param key_or_list str|[(str key, int direction), ...]
+    :param direction int:
+    :rtype: [(str key, int direction), ...]
+    """
+    if direction is None and isinstance(key_or_list, (list, tuple)) \
+       and all(isinstance(tup, (list, tuple)) and len(tup) == 2 for tup in key_or_list):
+        _sort = key_or_list
+    elif direction is None and isinstance(key_or_list, str):
+        _sort = [(key_or_list, ASCENDING)]
+    elif isinstance(key_or_list, str) and isinstance(direction, int):
+        _sort = [(key_or_list, direction)]
+    else:
+        raise MongitaError("Unsupported sort parameter format. See the docs.")
+    for sort_key, sort_direction in _sort:
+        if not isinstance(sort_key, str):
+            raise MongitaError("Sort key(s) must be strings %r" % str(key_or_list))
+        if sort_direction not in (ASCENDING, DESCENDING):
+            raise MongitaError("Sort direction(s) must be either ASCENDING (1) or DESCENDING (-1). Not %r" % direction)
+    return _sort
+
+
 class Cursor():
     UNIMPLEMENTED = ['add_option', 'address', 'alive', 'allow_disk_use', 'batch_size', 'clone', 'collation', 'collection', 'comment', 'cursor_id', 'distinct', 'explain', 'hint', 'limit', 'max', 'max_await_time_ms', 'max_time_ms', 'min', 'remove_option', 'retrieved', 'rewind', 'session', 'skip', 'where']
     DEPRECATED = ['count', 'max_scan']
@@ -63,23 +88,11 @@ class Cursor():
         :param direction mongita.ASCENDING|mongita.DESCENDING:
         :rtype: cursor.Cursor
         """
+
+        self._sort = _validate_sort(key_or_list, direction)
         if self._cursor:
             raise InvalidOperation("Cursor has already started and can't be sorted")
 
-        if direction is None and isinstance(key_or_list, (list, tuple)) \
-           and all(isinstance(tup, (list, tuple)) and len(tup) == 2 for tup in key_or_list):
-            self._sort = key_or_list
-        elif direction is None and isinstance(key_or_list, str):
-            self._sort = [(key_or_list, ASCENDING)]
-        elif isinstance(key_or_list, str) and isinstance(direction, int):
-            self._sort = [(key_or_list, direction)]
-        else:
-            raise MongitaError("Unsupported sort parameter format. See the docs.")
-        for sort_key, sort_direction in self._sort:
-            if not isinstance(sort_key, str):
-                raise MongitaError("Sort key(s) must be strings %r" % str(key_or_list))
-            if sort_direction not in (ASCENDING, DESCENDING):
-                raise MongitaError("Sort direction(s) must be either ASCENDING (1) or DESCENDING (-1). Not %r" % direction)
         return self
 
     @support_alert
@@ -96,7 +109,7 @@ class Cursor():
             raise TypeError('Limit must be an integer')
 
         if self._cursor:
-            raise InvalidOperation("Cursor has already started and can't be sorted")
+            raise InvalidOperation("Cursor has already started and can't be limited")
 
         self._limit = limit
         return self
@@ -106,8 +119,4 @@ class Cursor():
         """
         Close this cursor to free the memory
         """
-        def empty_cursor():
-            return
-            yield
-
-        self._cursor = empty_cursor()
+        self._cursor = iter(())

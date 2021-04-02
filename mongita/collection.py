@@ -1,7 +1,7 @@
 import bson
 import sortedcontainers
 
-from .cursor import Cursor
+from .cursor import Cursor, _validate_sort
 from .common import support_alert, Location, ASCENDING, DESCENDING, StorageObject, MetaStorageObject
 from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
@@ -253,6 +253,8 @@ def _set_item_in_doc(update_op, update_op_dict, doc):
 
     for doc_key, value in update_op_dict.items():
         ds, last_key = _get_datastructure_from_doc(doc, doc_key)
+        if isinstance(ds, list):
+            _rightpad(ds, last_key)
         if ds is None:
             raise MongitaError("Cannot apply operation %r to %r" %
                                ({update_op: update_op_dict}, doc))
@@ -272,7 +274,7 @@ def _rightpad(item, desired_length):
     :param desired_length int:
     :rtype: None
     """
-    pad_len = desired_length - len(item)
+    pad_len = desired_length - len(item) + 1
     for _ in range(pad_len):
         item.append(None)
 
@@ -301,24 +303,32 @@ def _get_datastructure_from_doc(doc, key):
     levels = key.split('.')
     levels, last_level = levels[:-1], levels[-1]
     for level in levels:
+        print("cur item", item)
+        print('level', level)
         if isinstance(item, list):
+            print("item is list")
             try:
                 level_int = int(level)
             except ValueError:
                 return None, None
+            if level_int < 0:
+                return None, None
             try:
                 item = item[level_int]
             except IndexError:
-                if level_int > 0:
-                    _rightpad(item, level_int)
-                    item = item[level_int]
-                else:
-                    return None, None
+                _rightpad(item, level_int)
+                item = item[level_int] or {}
         elif isinstance(item, dict):
-            if level not in item:
+            print("item is dict")
+            if level not in item or not isinstance(item[level], (list, dict)):
                 item[level] = {}
             item = item[level]
         else:
+            return None, None
+    if isinstance(item, list):
+        try:
+            last_level = int(last_level)
+        except ValueError:
             return None, None
     return item, last_level
 
@@ -742,9 +752,11 @@ class Collection():
         :rtype: dict|None
         """
 
-        # TODO test sort on find_one
         filter = filter or {}
         _validate_filter(filter)
+
+        if sort is not None:
+            sort = _validate_sort(sort)
         return self._find_one(filter, sort)
 
     @support_alert
@@ -760,7 +772,14 @@ class Collection():
 
         filter = filter or {}
         _validate_filter(filter)
-        return Cursor(self._find, filter, sort, limit)  # TODO test inline finds
+
+        if sort is not None:
+            sort = _validate_sort(sort)
+
+        if limit is not None and not isinstance(limit, int):
+            raise TypeError('Limit must be an integer')
+
+        return Cursor(self._find, filter, sort, limit)
 
     def _update_doc(self, doc_id, update):
         """

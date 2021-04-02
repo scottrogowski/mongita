@@ -44,8 +44,5 @@ class CommandCursor():
         """
         Close this cursor to free the memory
         """
-        def empty_cursor():
-            return
-            yield
 
-        self._cursor = empty_cursor()
+        self._cursor = iter(())

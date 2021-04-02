@@ -18,8 +18,6 @@ from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDI
 from mongita.common import Location, StorageObject
 
 
-# TODO test nested finds / inserts / etc
-
 TEST_DOCS = [
     {
         'name': 'Meercat',
@@ -233,6 +231,11 @@ def test_find_one(client_class):
     # nested find
     assert coll.find_one({'attrs.species': 'Homo sapien'})['name'] == 'Human'
 
+    # sort
+    assert coll.find_one({}, sort='name')['name'] == 'Honey Badger'
+    assert coll.find_one({}, sort=[('name', DESCENDING)])['name'] == 'Secretarybird'
+
+
     # bson or str should both work for _id lookups
     doc = coll.find_one({'_id': str(imr.inserted_ids[1])})
     assert doc['name'] == 'Indian grey mongoose'
@@ -281,6 +284,16 @@ def test_find(client_class):
 
     doc_cursor = coll.find({'family': 'Herpestidae', 'weight': {'$lt': 20}})
     assert len(list(doc_cursor)) == 2
+
+    finds = list(coll.find({}, sort='weight', limit=3))
+    assert [d['weight'] for d in finds] == sorted(d['weight'] for d in TEST_DOCS)[:3]
+
+    finds = list(coll.find({}, sort=[('weight', DESCENDING)], limit=3))
+    assert [d['weight'] for d in finds] == sorted([d['weight'] for d in TEST_DOCS], reverse=True)[:3]
+
+    # string limit
+    with pytest.raises(TypeError):
+        list(coll.find({}, sort=[('weight', DESCENDING)], limit='3'))
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -366,6 +379,11 @@ def test_cursor(client_class):
     # test bad format
     with pytest.raises(errors.PyMongoError):
         coll.find().sort([(ASCENDING, 'kingdom')])
+
+    # test close
+    doc_cursor.close()
+    with pytest.raises(StopIteration):
+        next(doc_cursor)
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -640,14 +658,47 @@ def test_nested(client_class):
 
     assert coll.update_one({'attrs.species': 'Suricata suricatta'},
                            {'$set': {'attrs.adorable': True}})
-    print(coll.find_one({'attrs.species': 'Suricata suricatta'}))
     adorbs = coll.find_one({'attrs.adorable': True})
     assert adorbs
     assert adorbs['attrs']['adorable']
     assert coll.count_documents({'attrs.adorable': True}) == 1
 
-    # TODO test indicies
+    assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                           {'$set': {'attrs.adorb_points': [1, 2, 3]}})
 
+    assert coll.find_one({'attrs.adorb_points.0': 1})['attrs']['adorb_points'] == [1, 2, 3]
+
+    assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                           {'$set': {'attrs.adorb_points.5': 10}})
+
+    assert coll.find_one({'attrs.adorb_points.0': 1})['attrs']['adorb_points'] == [1, 2, 3, None, None, 10]
+
+    assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                           {'$set': {'attrs.adorb_points.6.is.so': 'cute'}})
+
+    # setting a list the wrong ways
+    with pytest.raises(errors.MongitaError):
+        assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                               {'$set': {'attrs.adorb_points.seven': 'cute'}})
+    with pytest.raises(errors.MongitaError):
+        assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                               {'$set': {'attrs.adorb_points.eight.boo': 'cute'}})
+    with pytest.raises(errors.MongitaError):
+        assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                               {'$set': {'attrs.adorb_points.seven': 'cute'}})
+    with pytest.raises(errors.MongitaError):
+        assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                               {'$set': {'attrs.adorb_points.-1.imaginary.boo': 'cute'}})
+    with pytest.raises(errors.MongitaError):
+        assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                               {'$set': {'attrs.adorb_points.0.boo.hoo': 'cute'}})
+
+    # addressing a list the wrong ways
+    assert not coll.count_documents({'attrs.adorb_points.seven': 8})
+    assert not coll.count_documents({'attrs.adorb_points.11': 8})
+    assert not coll.count_documents({'attrs.adorb_points.0.hoo': 8})
+
+    # TODO test indicies
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -696,7 +747,12 @@ def test_database(client_class):
         cc.batch_size()
     with pytest.raises(AttributeError):
         cc.not_real_attr()
-    coll2 = list(cc)[0]
+
+    coll2 = next(cc)
+    cc.close()
+    with pytest.raises(StopIteration):
+        cc.next()
+
     assert isinstance(coll2, collection.Collection)
     assert coll2.name == 'snake_hunter'
     assert coll == coll2
@@ -917,6 +973,8 @@ def test_indicies_filters(client_class):
         sum(1 for d in TEST_DOCS if d['kingdom'] in ['bird', 'reptile'])
     assert coll.count_documents({'kingdom': {'$nin': ['bird', 'reptile']}}) == \
         sum(1 for d in TEST_DOCS if d['kingdom'] not in ['bird', 'reptile'])
+
+    assert coll.count_documents({'weight': {'$gt': 6, '$eq': .75}}) == 0
 
     with pytest.raises(mongita.errors.PyMongoError):
         coll.count_documents({'weight': {'$eqq': 6}})
