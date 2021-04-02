@@ -25,7 +25,7 @@ class MemoryEngine(Engine):
             obj = self._cache[location]
         except KeyError:
             return None
-        return StorageObject.from_storage(obj, as_bson=self._strict)
+        return StorageObject.from_storage(obj, from_bson=self._strict)
 
     def doc_exists(self, location):
         return location in self._cache
@@ -70,7 +70,7 @@ class MemoryEngine(Engine):
             obj = self._cache[location]
         except KeyError:
             return None
-        obj = MetaStorageObject.from_storage(obj, as_bson=self._strict)
+        obj = MetaStorageObject.from_storage(obj, from_bson=self._strict)
         return obj
 
     def create_path(self, location):

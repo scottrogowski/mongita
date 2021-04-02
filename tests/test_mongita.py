@@ -1,6 +1,7 @@
 from datetime import datetime, date
 import functools
 import os
+import random
 import sys
 import shutil
 from concurrent.futures import ThreadPoolExecutor
@@ -17,7 +18,7 @@ from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDI
 from mongita.common import Location, StorageObject
 
 
-# TODO test multi-level finds / inserts / etc
+# TODO test nested finds / inserts / etc
 
 TEST_DOCS = [
     {
@@ -462,6 +463,7 @@ def test_filters(client_class):
     with pytest.raises(errors.PyMongoError):
         list(coll.find({'kingdom': {'$nin': 'bird'}}))
 
+# TODO we really need to abuse the indexes more
 
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_update_one(client_class):
@@ -474,6 +476,8 @@ def test_update_one(client_class):
         coll.update_one({}, ['name', 'Mongooose'])
     with pytest.raises(errors.PyMongoError):
         coll.update_one({}, {'$set': ['name', 'Mongooose']})
+    with pytest.raises(errors.MongitaNotImplementedError):
+        coll.update_one({}, {'$unset': ['name', '']})
 
     ur = coll.update_one({'name': 'Meercat'}, {'$set': {'name': 'Mongooose'}})
     assert isinstance(ur, results.UpdateResult)
@@ -619,6 +623,31 @@ def test_delete_many(client_class):
     dor = coll.delete_many({'kingdom': 'fish'})
     assert dor.deleted_count == 0
     assert coll.count_documents({}) == LEN_TEST_DOCS - num_mammals
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_nested(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    assert set(coll.distinct('attrs.species')) == set([d['attrs']['species'] for d in TEST_DOCS])
+
+    assert not coll.find_one({'attrs.species': 'fake'})
+    assert coll.find_one({'attrs.species': 'Suricata suricatta'})
+    two_species = list(coll.find({'attrs.species': {'$in': ['Suricata suricatta',
+                                                            'Mellivora capensis']}}))
+    assert len(two_species) == 2
+    assert set([s['name'] for s in two_species]) == {'Meercat', "Honey Badger"}
+
+    assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                           {'$set': {'attrs.adorable': True}})
+    print(coll.find_one({'attrs.species': 'Suricata suricatta'}))
+    adorbs = coll.find_one({'attrs.adorable': True})
+    assert adorbs
+    assert adorbs['attrs']['adorable']
+    assert coll.count_documents({'attrs.adorable': True}) == 1
+
+    # TODO test indicies
+
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -900,22 +929,15 @@ def test_indicies_filters(client_class):
 # TODO all of the different ways to insert, update, replace, delete documents
 # and validating that the indicies stay solid
 
+# TODO create_index on thread_safe
+
 
 @pytest.mark.parametrize("client_class", CLIENTS)
-def test_thread_safe(client_class):
+def test_thread_safe_io(client_class):
     remove_test_dir()
     client = client_class()
     def insert_one(doc):
-        print("inserting %d" % doc['i'])
-        try:
-            client.db.snake_hunter.insert_one(doc)
-        except:
-            # TODO I think what is happening is that I'm getting excepts
-            # and not uploading all of the files. If this is to be thread-safe,
-            # I need to have built-in retries for modifying docs and metadata
-            # This could be like the GIL so that only one thread can do a write
-            # operation at a time.
-            print("EXCEPT!!")
+        client.db.snake_hunter.insert_one(doc)
 
     docs = [dict(d) for d in TEST_DOCS * 8]
     for i, doc in enumerate(docs):
@@ -923,10 +945,104 @@ def test_thread_safe(client_class):
     with ThreadPoolExecutor(max_workers=3) as executor:
         executor.map(insert_one, docs)
     for doc in docs:
-        print(doc['i'])
         assert client.db.snake_hunter.find_one({'i': i})
     assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS * 8
     assert client.db.snake_hunter.count_documents({'name': 'Human'}) == 8
+
+
+def flatten(list_of_lists):
+    return [y for x in list_of_lists for y in x]
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_thread_safe_im(client_class):
+    remove_test_dir()
+    client = client_class()
+    def insert_many(docs):
+        client.db.snake_hunter.insert_many(docs)
+
+    list_docs = []
+    cur_list = []
+    for i, doc in enumerate(TEST_DOCS * 8):
+        doc['i'] = i
+        cur_list.append(doc)
+        if i % 4 == 0:
+            list_docs.append(cur_list)
+            cur_list = []
+    list_docs.append(cur_list)
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(insert_many, list_docs)
+    for doc in flatten(list_docs):
+        assert client.db.snake_hunter.find_one({'i': doc['i']})
+    assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS * 8
+    assert client.db.snake_hunter.count_documents({'name': 'Human'}) == 8
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_thread_safe_uo(client_class):
+    client, coll, imr = setup_many(client_class)
+    def update_one(tup):
+        filter, replacement = tup
+        coll.update_one(filter, replacement)
+
+    tups = []
+    for doc in coll.find({}):
+        tups.append(({'_id': doc['_id']}, {'$set': {'name': 'BOOP'}}))
+        tups.append(({'_id': doc['_id']}, {'$set': {'attrs.species': 'BEEP'}}))
+    random.shuffle(tups)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(update_one, tups)
+
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert coll.count_documents({'name': 'BOOP'}) == LEN_TEST_DOCS
+    assert coll.count_documents({'attrs.species': 'BEEP'}) == LEN_TEST_DOCS
+
+    coll.create_index('kingdom')
+    coll.create_index('weight')
+    tups = []
+    for doc in coll.find({}):
+        tups.append(({'_id': doc['_id']}, {'$set': {'kingdom': 'BAM'}}))
+        tups.append(({'_id': doc['_id']}, {'$set': {'weight': 7}}))
+    random.shuffle(tups)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(update_one, tups)
+
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert coll.count_documents({'name': 'BOOP'}) == LEN_TEST_DOCS
+    assert coll.count_documents({'attrs.species': 'BEEP'}) == LEN_TEST_DOCS
+    assert coll.count_documents({'kingdom': 'BAM'}) == LEN_TEST_DOCS
+    assert coll.count_documents({'weight': 7}) == LEN_TEST_DOCS
+    assert coll.count_documents({'weight': 8}) == 0
+
+    for doc in coll.find({}):
+        tups.append(({'_id': doc['_id']}, {'$inc': {'weight': 1}}))
+    random.shuffle(tups)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(update_one, tups)
+
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert coll.count_documents({'weight': 8}) == LEN_TEST_DOCS
+
+# TODO these
+
+    # def update_many(filter, update):
+    #     client.db.snake_hunter.update_many(filter, update)
+
+    # def replace_one(filter, replacement):
+    #     client.db.snake_hunter.replace_one(filter, replacement)
+
+    # def replace_one_upsert(filter, replacement):
+    #     client.db.snake_hunter.replace_one(filter, replacement, upsert=True)
+
+    # def delete_one(filter):
+    #     client.db.snake_hunter.delete_one(filter)
+
+    # def delete_many(filter):
+    #     client.db.snake_hunter.delete_many(filter)
 
 
 def test_close_memory():

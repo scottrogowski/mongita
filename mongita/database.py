@@ -39,6 +39,11 @@ class Database():
             return coll
 
     def _create(self, coll_name):
+        """
+        Mongodb does not create anything until first insert. So when we insert
+        something, this will create a small metadata file to basically just store
+        our collection_names
+        """
         metadata = self._engine.download_metadata(self._metadata_location)
         if metadata:
             if coll_name not in metadata['collection_names']:
@@ -56,6 +61,11 @@ class Database():
 
     @support_alert
     def list_collection_names(self):
+        """
+        List every collection name.
+
+        :rtype: list[str]
+        """
         metadata = self._engine.download_metadata(self._metadata_location)
         if metadata:
             return metadata['collection_names']
@@ -63,17 +73,31 @@ class Database():
 
     @support_alert
     def list_collections(self):
+        """
+        Returns a cursor to iterate over all collections.
+
+        :rtype: CommandCursor
+        """
         def cursor():
             for coll_name in self.list_collection_names():
                 if coll_name not in self._cache:
                     self._cache[coll_name] = Collection(coll_name, self)
                 yield self._cache[coll_name]
-        return CommandCursor(cursor())
+        return CommandCursor(cursor)
 
     @support_alert
-    def drop_collection(self, collection):
-        if isinstance(collection, Collection):
-            collection = collection.name
+    def drop_collection(self, name_or_collection):
+        """
+        Drop a collection.
+
+        :param name_or_collection str|collection.Collection:
+        :rtype: None
+        """
+        if isinstance(name_or_collection, Collection):
+            collection = name_or_collection.name
+        else:
+            collection = name_or_collection
+
         location = Location(database=self.name, collection=collection)
         self._engine.delete_dir(location)
         metadata = self._engine.download_metadata(self._metadata_location)

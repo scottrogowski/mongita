@@ -1,16 +1,16 @@
 from .errors import MongitaNotImplementedError, MongitaError, InvalidOperation
-from .common import ASCENDING, DESCENDING
+from .common import ASCENDING, DESCENDING, support_alert
 
 
 class Cursor():
-    UNIMPLEMENTED = ['add_option', 'address', 'alive', 'allow_disk_use', 'batch_size', 'clone', 'close', 'collation', 'collection', 'comment', 'cursor_id', 'distinct', 'explain', 'hint', 'limit', 'max', 'max_await_time_ms', 'max_time_ms', 'min', 'remove_option', 'retrieved', 'rewind', 'session', 'skip', 'where']
+    UNIMPLEMENTED = ['add_option', 'address', 'alive', 'allow_disk_use', 'batch_size', 'clone', 'collation', 'collection', 'comment', 'cursor_id', 'distinct', 'explain', 'hint', 'limit', 'max', 'max_await_time_ms', 'max_time_ms', 'min', 'remove_option', 'retrieved', 'rewind', 'session', 'skip', 'where']
     DEPRECATED = ['count', 'max_scan']
 
-    def __init__(self, _find, filter):
+    def __init__(self, _find, filter, sort, limit):
         self._find = _find
         self._filter = filter
-        self._sort = []
-        self._limit = None
+        self._sort = sort or []
+        self._limit = limit or None
         self._cursor = None
 
     def __getattr__(self, attr):
@@ -31,20 +31,37 @@ class Cursor():
         return next(self._gen())
 
     def _gen(self):
+        """
+        This exists so that we can maintain our position in the cursor and
+        to not execute until we start requesting items
+        """
         if self._cursor:
             return self._cursor
         self._cursor = self._find(filter=self._filter, sort=self._sort, limit=self._limit)
         return self._cursor
 
+    @support_alert
     def next(self):
         """
-        https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html
+        Returns the next document in the Cursor. Raises StopIteration if there
+        are no more documents.
+
+        :rtype: dict
         """
         return next(self._gen())
 
+    @support_alert
     def sort(self, key_or_list, direction=None):
         """
-        https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html
+        Apply a sort to the cursor. Sorts have no impact until retrieving the
+        first document from the cursor. If not sorting against indexes, sort can
+        negatively impact performance.
+        This returns the same cursor to allow for chaining. Only the last sort
+        is applied.
+
+        :param key_or_list str|[(key, direction)]:
+        :param direction mongita.ASCENDING|mongita.DESCENDING:
+        :rtype: cursor.Cursor
         """
         if self._cursor:
             raise InvalidOperation("Cursor has already started and can't be sorted")
@@ -58,16 +75,22 @@ class Cursor():
             self._sort = [(key_or_list, direction)]
         else:
             raise MongitaError("Unsupported sort parameter format. See the docs.")
-        for k, v_direction in self._sort:
-            if not isinstance(k, str):
+        for sort_key, sort_direction in self._sort:
+            if not isinstance(sort_key, str):
                 raise MongitaError("Sort key(s) must be strings %r" % str(key_or_list))
-            if v_direction not in (ASCENDING, DESCENDING):
+            if sort_direction not in (ASCENDING, DESCENDING):
                 raise MongitaError("Sort direction(s) must be either ASCENDING (1) or DESCENDING (-1). Not %r" % direction)
         return self
 
+    @support_alert
     def limit(self, limit):
         """
-        https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html
+        Apply a limit to the number of elements returned from the cursor.
+        This returns the same cursor to allow for chaining. Only the last limit
+        is applied.
+
+        :param limit int:
+        :rtype: cursor.Cursor
         """
         if not isinstance(limit, int):
             raise TypeError('Limit must be an integer')
@@ -77,3 +100,14 @@ class Cursor():
 
         self._limit = limit
         return self
+
+    @support_alert
+    def close(self):
+        """
+        Close this cursor to free the memory
+        """
+        def empty_cursor():
+            return
+            yield
+
+        self._cursor = empty_cursor()

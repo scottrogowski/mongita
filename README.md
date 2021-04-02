@@ -24,7 +24,7 @@ Mongita is *very much* a project. Please report any bugs. Anticipate breaking ch
 
 ### When NOT to use Mongita
 - **Your database has multiple clients**: Mongita is an embedded database. It is thread-safe but is not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
-- **You need extreme speed**: Mongita is fast enough in most cases. However, if you are dealing with hundreds of transactions per second, you might want to use a standard MongoDB server.
+- **You need extreme speed**: Mongita is fast enough in most cases. However, if database transactions are your bottleneck and you are dealing with hundreds every second, you might want to use a standard MongoDB server or SQLite.
 - **You run a lot of uncommon commands**: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
 
 ### Installation
@@ -72,8 +72,8 @@ mongita.Database.drop_collection(name_or_collection)
 **Collection** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html))
 mongita.Collection.insert_one(document)
 mongita.Collection.insert_many(documents, ordered=True)
-mongita.Collection.find_one(filter)
-mongita.Collection.find(filter)
+mongita.Collection.find_one(filter, sort)
+mongita.Collection.find(filter, sort, limit)
 mongita.Collection.replace_one(filter, replacement, upsert=False)
 mongita.Collection.update_one(filter, update)
 mongita.Collection.update_many(filter, update)
@@ -89,6 +89,11 @@ mongita.Collection.index_information()
 mongita.Cursor.sort(key_or_list, direction=None)
 mongita.Cursor.next()
 mongita.Cursor.limit(limit)
+mongita.Cursor.close()
+
+**CommandCursor** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/command_cursor.html))
+mongita.CommandCursor.next()
+mongita.CommandCursor.close()
 
 **errors** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/errors.html))
 mongita.errors.MongitaError (parent class of all errors)

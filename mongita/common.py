@@ -19,6 +19,10 @@ _filename_ascii_strip_re = re.compile(r'[^A-Za-z0-9_.-]')
 
 
 def _secure_filename(filename: str) -> str:
+    """
+    The idea of this is to ensure that the document_id doesn't do sketchy shit on
+    the filesystem. This will probably be deleted soon.
+    """
     r"""From werkzeug source"""
     filename = unicodedata.normalize("NFKD", filename)
     filename = filename.encode("ascii", "ignore").decode("ascii")
@@ -43,7 +47,11 @@ def _secure_filename(filename: str) -> str:
 
 
 def ok_name(name):
-    # https://docs.mongodb.com/manual/reference/limits/#Restriction-on-Collection-Names
+    """
+    In-line with MongoDB restrictions, names are not be allowed to start with
+    '$' or 'system.'.
+    https://docs.mongodb.com/manual/reference/limits/#Restriction-on-Collection-Names
+    """
     if not name:
         return False
     if '$' in name:
@@ -54,6 +62,10 @@ def ok_name(name):
 
 
 def support_alert(func):
+    """
+    Provide smart tips if the user tries to use un-implemented / deprecated
+    known kwargs.
+    """
     @functools.wraps(func)
     def inner(*args, **kwargs):
         for k in kwargs:
@@ -67,14 +79,20 @@ def support_alert(func):
 
 
 def int_to_bytes(x: int) -> bytes:
+    """To change the generation to a byte string for making the head of a file."""
     return x.to_bytes(8, 'big')
 
 
 def int_from_bytes(xbytes: bytes) -> int:
+    """To get the generation from a byte string that was at the head of a file."""
     return int.from_bytes(xbytes, 'big')
 
 
 class StorageObject(dict):
+    """
+    Wrapper over the document dictionary that allows us to keep track of the
+    document generation for concurrency reasons.
+    """
     __slots__ = ['generation']
 
     def __init__(self, doc, generation=0):
@@ -82,14 +100,21 @@ class StorageObject(dict):
         super().__init__(doc)
 
     def to_storage(self, as_bson=False):
+        """
+        Return this document as something storable. In strict / disk mode,
+        this should be bson. Otherwise, better performance by not encoding.
+        """
         self.generation += 1
         if as_bson:
             return int_to_bytes(self.generation) + bson.encode(self)
         return self
 
     @staticmethod
-    def from_storage(obj, as_bson=False):
-        if as_bson:
+    def from_storage(obj, from_bson=False):
+        """
+        Return a storage object given what we got out of storage
+        """
+        if from_bson:
             generation = int_from_bytes(obj[:8])
             doc = bson.decode(obj[8:])
             return StorageObject(doc, generation)
@@ -97,7 +122,15 @@ class StorageObject(dict):
 
 
 class MetaStorageObject(StorageObject):
+    """
+    Subclass of the StorageObject with some extra handling for metadata.
+    Specifically, indexes need extra steps to fully encode / decode.
+    """
+
     def to_storage(self, as_bson=False):
+        """
+        Makes sure that the SortedDict indexes are bson-compatible
+        """
         self.generation += 1
         if as_bson:
             new_metadata = copy.deepcopy(self)
@@ -108,8 +141,8 @@ class MetaStorageObject(StorageObject):
         return self
 
     @staticmethod
-    def from_storage(obj, as_bson=False):
-        if as_bson:
+    def from_storage(obj, from_bson=False):
+        if from_bson:
             generation = int_from_bytes(obj[:8])
             doc = bson.decode(obj[8:])
             so = MetaStorageObject(doc, generation)
@@ -118,6 +151,9 @@ class MetaStorageObject(StorageObject):
         return obj
 
     def decode_indexes(self):
+        """
+        Changes the encoded indexes to SortedDicts
+        """
         if 'indexes' in self:
             for idx_key in list(self['indexes'].keys()):
                 self['indexes'][idx_key]['idx'] = sortedcontainers.SortedDict(self['indexes'][idx_key]['idx'])
@@ -139,6 +175,9 @@ class Location():
         self.path = os.path.join(*tuple(filter(None, (database, collection, _id and str(_id)))))
 
     def parent_path(self):
+        """
+        Returns the collection path of the location
+        """
         return os.path.join(*tuple(filter(None, (self.database, self.collection))))
 
     def is_collection(self):
@@ -149,6 +188,10 @@ class Location():
                 and not str(self._id).startswith('$'))
 
     def is_in_collection_incl_metadata(self, collection_location):
+        """
+        Usually, we don't want metadata files in document counts, etc.
+        Sometimes we do.
+        """
         return (self.database == collection_location.database
                 and (not collection_location.collection
                      or self.collection == collection_location.collection))
@@ -157,7 +200,9 @@ class Location():
         return f"Location(db={self.database} collection={self.collection}, _id={self._id})"
 
     def __hash__(self):
+        """ Needed to store the location as a key in the cache """
         return hash(self.path)
 
     def __eq__(self, other):
+        """ Needed to store the location as a key in the cache """
         return self.path == other.path

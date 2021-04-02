@@ -9,7 +9,8 @@ from ..common import StorageObject, MetaStorageObject, int_from_bytes
 from .engine_common import Engine
 
 # TODO https://filelock.readthedocs.io/en/latest/
-
+# TODO probably don't need filelock if we are locking on every access
+# at least try to change to single-file collection first.
 
 class DiskEngine(Engine):
     def __init__(self, base_storage_path):
@@ -24,8 +25,6 @@ class DiskEngine(Engine):
         return os.path.join(self.base_storage_path, location.path)
 
     def upload_doc(self, location, doc, if_gen_match=False):
-        name = doc.get('i')
-        print("uploading %s" % name)
         full_path = self._get_full_path(location)
 
         if if_gen_match and self.doc_exists(location):
@@ -34,7 +33,6 @@ class DiskEngine(Engine):
                 existing_generation = int_from_bytes(f.read(8))
                 if existing_generation > doc.generation:
                     fcntl.lockf(f, fcntl.LOCK_UN)
-                    print("existing_generation != !!!!!")
                     return False
                 f.seek(0)
                 f.write(doc.to_storage(as_bson=True))  # TODO existing_generation + 1
@@ -50,7 +48,6 @@ class DiskEngine(Engine):
             f.truncate()
             fcntl.lockf(f, fcntl.LOCK_UN)
             self._cache[location] = doc
-            print("count in cache2 (%s) %d" % (name, sum(1 for k in self._cache.keys() if not 'metadata' in k.path)))
         return True
 
     def upload_metadata(self, location, doc):

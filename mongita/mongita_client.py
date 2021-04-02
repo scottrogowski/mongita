@@ -38,6 +38,11 @@ class MongitaClient(abc.ABC):
             return db
 
     def _create(self, db_name):
+        """
+        Mongodb does not create anything until first insert. So when we insert
+        something, this will create a small metadata file to basically just store
+        our database_names
+        """
         metadata = self.engine.download_metadata(self._metadata_location)
         if metadata:
             if db_name not in metadata['database_names']:
@@ -53,10 +58,20 @@ class MongitaClient(abc.ABC):
 
     @support_alert
     def close(self):
+        """
+        Close the connection to the database and remove all cache.
+
+        :rtype: None
+        """
         self.engine.close()
 
     @support_alert
     def list_database_names(self):
+        """
+        List every database name.
+
+        :rtype: list[str]
+        """
         metadata = self.engine.download_metadata(self._metadata_location)
         if metadata:
             return metadata['database_names']
@@ -64,15 +79,26 @@ class MongitaClient(abc.ABC):
 
     @support_alert
     def list_databases(self):
+        """
+        Returns a cursor to iterate over all databases.
+
+        :rtype: CommandCursor
+        """
         def cursor():
             for db_name in self.list_database_names():
                 if db_name not in self._cache:
                     self._cache[db_name] = Database(db_name, self)
                 yield self._cache[db_name]
-        return CommandCursor(cursor())
+        return CommandCursor(cursor)
 
     @support_alert
     def drop_database(self, name_or_database):
+        """
+        Drop a database.
+
+        :param name_or_database str|database.Database:
+        :rtype: None
+        """
         if isinstance(name_or_database, Database):
             db_name = name_or_database.name
         else:
@@ -91,6 +117,10 @@ class MongitaClient(abc.ABC):
 
 
 class MongitaClientDisk(MongitaClient):
+    """
+    The MongoClientDisk persists its state on the disk. It is meant to be
+    compatible in most ways with pymongo's MongoClient.
+    """
     def __init__(self, bucket=DEFAULT_STORAGE_DIR):
         self.engine = disk_engine.DiskEngine(bucket)
         super().__init__()
@@ -101,6 +131,11 @@ class MongitaClientDisk(MongitaClient):
 
 
 class MongitaClientMemory(MongitaClient):
+    """
+    The MongoClientMemory only holds its state in memory. Nonetheless, it is
+    still thread-safe. It is meant to be compatible in most ways with
+    pymongo's MongoClient.
+    """
     def __init__(self, strict=False):
         self.engine = memory_engine.MemoryEngine(strict)
         super().__init__()
