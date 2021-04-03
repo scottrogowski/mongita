@@ -1,3 +1,5 @@
+import collections
+
 import bson
 import sortedcontainers
 
@@ -31,7 +33,7 @@ def _validate_filter(filter):
     for query_ops in filter.values():
         if isinstance(query_ops, dict):
             for op in query_ops.keys():
-                if op not in _SUPPORTED_FILTER_OPERATORS:
+                if op.startswith('$') and op not in _SUPPORTED_FILTER_OPERATORS:
                     raise MongitaError(
                         "Mongita does not support %r. These filter operators are "
                         "supported: %r" % (k, _SUPPORTED_FILTER_OPERATORS))
@@ -96,38 +98,40 @@ def _doc_matches_agg(doc_v, query_ops):
     :returns: Whether the document value matches all query operators
     :rtype: bool
     """
-
-    for query_op, query_val in query_ops.items():
-        if query_op == '$in':
-            if not isinstance(query_val, (list, tuple, set)):
-                raise MongitaError("'$in' requires an iterable")
-            if doc_v not in query_val:
-                return False
-        elif query_op == '$nin':
-            if not isinstance(query_val, (list, tuple, set)):
-                raise MongitaError("'$nin' requires an iterable")
-            if doc_v in query_val:
-                return False
-        elif query_op == '$eq':
-            if doc_v != query_val:
-                return False
-        elif query_op == '$ne':
-            if doc_v == query_val:
-                return False
-        elif query_op == '$lt':
-            if doc_v >= query_val:
-                return False
-        elif query_op == '$lte':
-            if doc_v > query_val:
-                return False
-        elif query_op == '$gt':
-            if doc_v <= query_val:
-                return False
-        elif query_op == '$gte':
-            if doc_v < query_val:
-                return False
-        # agg_k check is in _validate_filter
-    return True
+    if any(k.startswith('$') for k in query_ops.keys()):
+        for query_op, query_val in query_ops.items():
+            if query_op == '$in':
+                if not isinstance(query_val, (list, tuple, set)):
+                    raise MongitaError("'$in' requires an iterable")
+                if doc_v not in query_val:
+                    return False
+            elif query_op == '$nin':
+                if not isinstance(query_val, (list, tuple, set)):
+                    raise MongitaError("'$nin' requires an iterable")
+                if doc_v in query_val:
+                    return False
+            elif query_op == '$eq':
+                if doc_v != query_val:
+                    return False
+            elif query_op == '$ne':
+                if doc_v == query_val:
+                    return False
+            elif query_op == '$lt':
+                if doc_v >= query_val:
+                    return False
+            elif query_op == '$lte':
+                if doc_v > query_val:
+                    return False
+            elif query_op == '$gt':
+                if doc_v <= query_val:
+                    return False
+            elif query_op == '$gte':
+                if doc_v < query_val:
+                    return False
+            # agg_k check is in _validate_filter
+        return True
+    else:
+        return doc_v == query_ops
 
 
 def _doc_matches_slow_filters(doc, slow_filters):
@@ -153,19 +157,19 @@ def _doc_matches_slow_filters(doc, slow_filters):
     return True
 
 
-def _ids_given_irange_filters(matched_ids, idx, **kwargs):
+def _ids_given_irange_filters(matched_keys, idx, **kwargs):
     """
-    Given an existing set of matched_ids, a SortedDict (idx), and
+    Given an existing set of matched_keys, a SortedDict (idx), and
     a set of kwargs to apply to SortedDict.irange,
-    return all keys that match both the irange and the existing matched_ids
+    return all keys that match both the irange and the existing matched_keys
 
-    :param matched_ids set:
+    :param matched_keys set:
     :param idx sortedcontainers.SortedDict:
     :param kwargs dict: irange filters
     :rtype set:
     """
-    if matched_ids is not None:
-        return matched_ids.intersection(set(idx.irange(**kwargs)))
+    if matched_keys:
+        return matched_keys.intersection(set(idx.irange(**kwargs)))
     return set(idx.irange(**kwargs))
 
 
@@ -192,46 +196,48 @@ def _get_ids_from_idx(idx, query_ops):
     :param query_ops str|dict:
     :rtype: set
     """
-    matched_ids = None
+    matched_keys = set()
     if isinstance(query_ops, dict):
-        for query_op, query_val in sorted(query_ops.items(),
-                                          key=_idx_filter_sort, reverse=True):
-            if query_op == '$eq':
-                matched_ids = set((query_val,)) if query_val in (matched_ids or idx.keys()) else set()
-            elif query_op == '$ne':
-                matched_ids = set(k for k in matched_ids or idx.keys() if k != query_val)
-            elif query_op == '$lt':
-                matched_ids = _ids_given_irange_filters(matched_ids, idx,
-                                                        maximum=query_val,
-                                                        inclusive=(False, False))
-            elif query_op == '$lte':
-                matched_ids = _ids_given_irange_filters(matched_ids, idx,
-                                                        maximum=query_val,
-                                                        inclusive=(True, True))
-            elif query_op == '$gt':
-                matched_ids = _ids_given_irange_filters(matched_ids, idx,
-                                                        minimum=query_val,
-                                                        inclusive=(False, False))
-            elif query_op == '$gte':
-                matched_ids = _ids_given_irange_filters(matched_ids, idx,
-                                                        minimum=query_val,
-                                                        inclusive=(True, True))
-            elif query_op == '$in':
-                if not isinstance(query_val, (list, tuple, set)):
-                    raise MongitaError("'$in' requires an iterable")
-                matched_ids = set(k for k in matched_ids or idx.keys() if k in query_val)
-            elif query_op == '$nin':
-                if not isinstance(query_val, (list, tuple, set)):
-                    raise MongitaError("'$nin' requires an iterable")
-                matched_ids = set(k for k in matched_ids or idx.keys() if k not in query_val)
-            # validation of options is done earlier
-            if not matched_ids:
-                return set()
+        if _make_idx_key(query_ops) in idx.keys():
+            matched_keys = set([_make_idx_key(query_ops),])
+        else:
+            for query_op, query_val in sorted(query_ops.items(),
+                                              key=_idx_filter_sort, reverse=True):
+                clean_idx_key = _make_idx_key(query_val)
+                if query_op == '$eq':
+                    matched_keys = set((clean_idx_key,)) if clean_idx_key in (matched_keys or idx.keys()) else set()
+                elif query_op == '$ne':
+                    matched_keys = set(k for k in matched_keys or idx.keys() if k != clean_idx_key)
+                elif query_op == '$lt':
+                    matched_keys = _ids_given_irange_filters(matched_keys, idx,
+                                                             maximum=clean_idx_key,
+                                                             inclusive=(False, False))
+                elif query_op == '$lte':
+                    matched_keys = _ids_given_irange_filters(matched_keys, idx,
+                                                             maximum=clean_idx_key,
+                                                             inclusive=(True, True))
+                elif query_op == '$gt':
+                    matched_keys = _ids_given_irange_filters(matched_keys, idx,
+                                                             minimum=clean_idx_key,
+                                                             inclusive=(False, False))
+                elif query_op == '$gte':
+                    matched_keys = _ids_given_irange_filters(matched_keys, idx,
+                                                             minimum=clean_idx_key,
+                                                             inclusive=(True, True))
+                elif query_op == '$in':
+                    if not isinstance(query_val, (list, tuple, set)):
+                        raise MongitaError("'$in' requires an iterable")
+                    matched_keys = set(k for k in matched_keys or idx.keys() if k in query_val)
+                elif query_op == '$nin':
+                    if not isinstance(query_val, (list, tuple, set)):
+                        raise MongitaError("'$nin' requires an iterable")
+                    matched_keys = set(k for k in matched_keys or idx.keys() if k not in query_val)
+                # validation of options is done earlier
         ret = set()
-        for k in matched_ids:
+        for k in matched_keys:
             ret.update(idx[k])
         return ret
-    return set(idx.get(query_ops, set()))
+    return set(idx.get(_make_idx_key(query_ops), set()))
 
 
 def _set_item_in_doc(update_op, update_op_dict, doc):
@@ -303,10 +309,7 @@ def _get_datastructure_from_doc(doc, key):
     levels = key.split('.')
     levels, last_level = levels[:-1], levels[-1]
     for level in levels:
-        print("cur item", item)
-        print('level', level)
         if isinstance(item, list):
-            print("item is list")
             try:
                 level_int = int(level)
             except ValueError:
@@ -319,7 +322,6 @@ def _get_datastructure_from_doc(doc, key):
                 _rightpad(item, level_int)
                 item = item[level_int] or {}
         elif isinstance(item, dict):
-            print("item is dict")
             if level not in item or not isinstance(item[level], (list, dict)):
                 item[level] = {}
             item = item[level]
@@ -366,6 +368,23 @@ def _get_item_from_doc(doc, key):
     return doc.get(key)
 
 
+def _make_idx_key(idx_key):
+    """
+    MongoDB is very liberal when it comes to what keys it can compare on.
+    When we get something weird, it makes sense to just store it as a
+    hashable key
+
+    :param idx_key value:
+    :rtype: hashable value
+    """
+    if isinstance(idx_key, collections.abc.Hashable):
+        return idx_key
+    try:
+        return str(bson.encode(idx_key))
+    except TypeError:
+        return str(bson.encode({'idx_key': idx_key}))
+
+
 def _update_idx_doc_with_new_documents(documents, idx_doc):
     """
     Update an idx_doc given documents which were just inserted / modified / etc
@@ -379,8 +398,9 @@ def _update_idx_doc_with_new_documents(documents, idx_doc):
     new_idx = sortedcontainers.SortedDict(idx_doc['idx'])
 
     for doc in documents:
-        key = _get_item_from_doc(doc, key_str)
-        new_idx.setdefault(key, []).append(doc['_id'])
+        key = _make_idx_key(_get_item_from_doc(doc, key_str))
+        if key is not None:
+            new_idx.setdefault(key, []).append(doc['_id'])
 
     reverse = idx_doc['direction'] == DESCENDING
     idx_doc['idx'] = sortedcontainers.SortedDict(sorted(new_idx.items(), reverse=reverse))

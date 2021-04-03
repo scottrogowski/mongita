@@ -212,9 +212,10 @@ def test_find_one(client_class):
     with pytest.raises(errors.PyMongoError):
         coll.find_one({'weight': {'$bigger': 7}})
     with pytest.raises(errors.PyMongoError):
-        coll.find_one({'weight': {'bigger': 7}})
-    with pytest.raises(errors.PyMongoError):
         coll.find_one({5: 'hi'})
+
+    # comparison by dictionary is actually fine
+    assert not coll.find_one({'weight': {'bigger': 7}})
 
     doc = coll.find_one()
     assert isinstance(doc, dict) and not isinstance(doc, StorageObject)
@@ -234,7 +235,6 @@ def test_find_one(client_class):
     # sort
     assert coll.find_one({}, sort='name')['name'] == 'Honey Badger'
     assert coll.find_one({}, sort=[('name', DESCENDING)])['name'] == 'Secretarybird'
-
 
     # bson or str should both work for _id lookups
     doc = coll.find_one({'_id': str(imr.inserted_ids[1])})
@@ -481,8 +481,6 @@ def test_filters(client_class):
     with pytest.raises(errors.PyMongoError):
         list(coll.find({'kingdom': {'$nin': 'bird'}}))
 
-# TODO we really need to abuse the indexes more
-
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_update_one(client_class):
     client, coll, imr = setup_many(client_class)
@@ -698,7 +696,19 @@ def test_nested(client_class):
     assert not coll.count_documents({'attrs.adorb_points.11': 8})
     assert not coll.count_documents({'attrs.adorb_points.0.hoo': 8})
 
-    # TODO test indicies
+    coll.create_index('species')
+    assert coll.count_documents({'attrs.species': 'Suricata suricatta'}) == 1
+    coll.update_one({'attrs.species': 'Suricata suricatta'},
+                    {'$set': {'attrs.adorb_points': [1, 2, 3],
+                              'attrs.dict': {'hello': ['w', 'orld']}}})
+    coll.create_index('attrs.adorb_points')
+    coll.create_index('attrs.dict')
+
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert coll.count_documents({'attrs.adorb_points': [1, 2, 3]}) == 1
+    assert coll.count_documents({'attrs.dict': {'hello': ['w', 'orld']}}) == 1
+    assert coll.count_documents({'attrs.adorb_points': [1, 2]}) == 0
+    assert coll.count_documents({'attrs.dict': {'hello': ['w', 'orld!']}}) == 0
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -984,9 +994,7 @@ def test_indicies_filters(client_class):
     with pytest.raises(mongita.errors.PyMongoError):
         coll.count_documents({'kingdom': {'$nin': 'bird'}})
 
-# TODO all of the different ways to insert, update, replace, delete documents
-# and validating that the indicies stay solid
-
+# TODO with indicies: all of the different ways to insert, update, replace, delete documents
 # TODO create_index on thread_safe
 
 
@@ -1201,9 +1209,3 @@ def test_strict():
     client = MongitaClientMemory(strict=True)
     coll = client.db.snake_hunter
     assert len(coll.index_information()) == 1
-
-
-
-    # imr = coll.insert_many([{'reason': 'bad date', 'dt': date(2020, 1, 1)},
-    #                         {'reason': 'ok', 'dt': '2020-01-01'}], ordered=False)
-
