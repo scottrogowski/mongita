@@ -11,7 +11,7 @@ from .database import Database
 from .errors import MongitaNotImplementedError, InvalidName
 from .engines import disk_engine, memory_engine
 
-DEFAULT_STORAGE_DIR = os.path.join(pathlib.Path.home(), '.mongita_storage')
+DEFAULT_STORAGE_DIR = os.path.join(pathlib.Path.home(), '.mongita')
 
 
 class MongitaClient(abc.ABC):

@@ -1093,7 +1093,7 @@ def test_thread_safe_uo(client_class):
     assert coll.count_documents({}) == LEN_TEST_DOCS
     assert coll.count_documents({'weight': 8}) == LEN_TEST_DOCS
 
-# TODO these
+    # TODO these for thread safety checks
 
     # def update_many(filter, update):
     #     client.db.snake_hunter.update_many(filter, update)
