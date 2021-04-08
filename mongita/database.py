@@ -2,7 +2,7 @@ import bson
 
 from .collection import Collection
 from .command_cursor import CommandCursor
-from .common import support_alert, Location, ok_name, MetaStorageObject
+from .common import support_alert, ok_name, MetaStorageObject
 from .errors import MongitaNotImplementedError, InvalidName
 
 
@@ -14,8 +14,7 @@ class Database():
         self.name = db_name
         self.client = client
         self._engine = client.engine
-        self._base_location = Location(database=db_name)
-        self._metadata_location = Location(database=db_name, _id='$.metadata')
+        self._base_location = db_name
         self._cache = {}
 
     def __repr__(self):
@@ -44,11 +43,11 @@ class Database():
         something, this will create a small metadata file to basically just store
         our collection_names
         """
-        metadata = self._engine.download_metadata(self._metadata_location)
+        metadata = self._engine.get_metadata(self._base_location)
         if metadata:
             if coll_name not in metadata['collection_names']:
                 metadata['collection_names'].append(coll_name)
-                assert self._engine.upload_metadata(self._metadata_location, metadata)
+                assert self._engine.put_metadata(self._base_location, metadata)
             return
         self._engine.create_path(self._base_location)
         metadata = MetaStorageObject({
@@ -56,7 +55,7 @@ class Database():
             'collection_names': [coll_name],
             'uuid': str(bson.ObjectId()),
         })
-        assert self._engine.upload_metadata(self._metadata_location, metadata)
+        assert self._engine.put_metadata(self._base_location, metadata)
         self.client._create(self.name)
 
     @support_alert
@@ -66,7 +65,7 @@ class Database():
 
         :rtype: list[str]
         """
-        metadata = self._engine.download_metadata(self._metadata_location)
+        metadata = self._engine.get_metadata(self._base_location)
         if metadata:
             return metadata['collection_names']
         return []
@@ -98,12 +97,11 @@ class Database():
         else:
             collection = name_or_collection
 
-        location = Location(database=self.name, collection=collection)
-        self._engine.delete_dir(location)
-        metadata = self._engine.download_metadata(self._metadata_location)
+        self._engine.delete_dir(f'{self.name}.{collection}')
+        metadata = self._engine.get_metadata(self._base_location)
         if metadata and collection in metadata['collection_names']:
             metadata['collection_names'].remove(collection)
-            assert self._engine.upload_metadata(self._metadata_location, metadata)
+            assert self._engine.put_metadata(self._base_location, metadata)
         try:
             del self._cache[collection]
         except KeyError:

@@ -1,149 +1,206 @@
-import fcntl
+import collections
+import itertools
 import os
+import pathlib
 import shutil
 import threading
+from sys import intern as itrn
 
 import bson
 
-from ..common import StorageObject, MetaStorageObject, int_from_bytes
+from ..common import MetaStorageObject, secure_filename
 from .engine_common import Engine
 
-# TODO https://filelock.readthedocs.io/en/latest/
-# TODO probably don't need filelock if we are locking on every access
-# at least try to change to single-file collection first.
+
+# TODO assert path is not relative.
+
 
 class DiskEngine(Engine):
     def __init__(self, base_storage_path):
         if not os.path.exists(base_storage_path):
             os.mkdir(base_storage_path)
         self.base_storage_path = base_storage_path
-        self._cache = {}
+        self._cache = collections.defaultdict(dict)
+        self._collection_fhs = {}
+        self._metadata = {}
+        self._loc_idx = collections.defaultdict(dict)
         self.lock = threading.RLock()
 
-    def _get_full_path(self, location):
-        # TODO assert path is not relative.
-        return os.path.join(self.base_storage_path, location.path)
+    def _get_full_path(self, collection, filename=''):
+        return os.path.join(*list(filter(None, (self.base_storage_path,
+                                                secure_filename(collection),
+                                                filename))))
 
-    def upload_doc(self, location, doc, if_gen_match=False):
-        full_path = self._get_full_path(location)
+    def _get_coll_fh(self, collection):
+        try:
+            return self._collection_fhs[collection]
+        except KeyError:
+            pass
+        data_path = self._get_full_path(collection, '$.data')
+        if not os.path.exists(data_path):
+            pathlib.Path(data_path).touch()
+        fh = open(data_path, 'rb+')
+        fh.at_end = False
+        self._collection_fhs[itrn(collection)] = fh
+        return fh
 
-        if if_gen_match and self.doc_exists(location):
-            with open(full_path, 'rb+') as f:
-                fcntl.lockf(f, fcntl.LOCK_EX)
-                existing_generation = int_from_bytes(f.read(8))
-                if existing_generation > doc.generation:
-                    fcntl.lockf(f, fcntl.LOCK_UN)
-                    return False
-                f.seek(0)
-                f.write(doc.to_storage(as_bson=True))  # TODO existing_generation + 1
-                f.truncate()
-                fcntl.lockf(f, fcntl.LOCK_UN)
-            self._cache[location] = doc
-            # print("count in cache1 %d" % sum(1 for k in self._cache.keys() if not 'metadata' in k.path))
+    def _get_loc_idx(self, collection):
+        if collection in self._loc_idx:
+            return self._loc_idx[collection]
+
+        loc_idx_path = self._get_full_path(collection, '$.loc_idx')
+        try:
+            with open(loc_idx_path, 'rb') as f:
+                self._loc_idx[itrn(collection)] = bson.decode(f.read())
+        except FileNotFoundError:
+            self._loc_idx[itrn(collection)] = {}
+        return self._loc_idx[collection]
+
+    def _set_loc_idx(self, collection, doc_id, pos):
+        if pos is None:
+            self._loc_idx[itrn(collection)].pop(doc_id, None)
+        else:
+            self._loc_idx[itrn(collection)][itrn(doc_id)] = pos
+
+    def doc_exists(self, collection, doc_id):
+        if str(doc_id) in self._get_loc_idx(collection):
             return True
+        return False
 
-        with open(full_path, 'wb') as f:
-            fcntl.lockf(f, fcntl.LOCK_EX)
-            f.write(doc.to_storage(as_bson=True))
-            f.truncate()
-            fcntl.lockf(f, fcntl.LOCK_UN)
-            self._cache[location] = doc
+    def get_doc(self, collection, doc_id):
+        doc_id = str(doc_id)
+        try:
+            return self._cache[itrn(collection)][itrn(doc_id)]
+        except KeyError:
+            pass
+
+        pos = self._get_loc_idx(collection).get(str(doc_id))
+        assert pos is not None
+        fh = self._get_coll_fh(collection)
+        fh.seek(pos)
+        fh.at_end = False
+        first_byte = fh.read(4)
+        doc_len = int.from_bytes(first_byte, 'little', signed=True)
+        doc = bson.decode(first_byte + fh.read(doc_len - 4))
+        self._cache[itrn(collection)][itrn(doc_id)] = doc
+        return doc
+
+    def put_doc(self, collection, doc, no_overwrite=False):
+        doc_id = str(doc['_id'])
+        if no_overwrite and self.doc_exists(collection, doc_id):
+            return False
+        self._cache[itrn(collection)][itrn(doc_id)] = doc
+
+        encoded_doc = bson.encode(doc)
+        fh = self._get_coll_fh(collection)
+        pos = self._get_loc_idx(collection).get(str(doc_id))
+        if pos is not None:
+            fh.seek(pos)
+            fh.at_end = False
+            first_byte = fh.read(4)
+            spare_bytes = int.from_bytes(first_byte, 'little', signed=True) - len(encoded_doc)
+            if spare_bytes >= 0:
+                # TODO, need to rewrite when document gets too sparse
+                fh.seek(pos)
+                fh.write(encoded_doc + b'\x00' * spare_bytes)
+                return True
+        if not fh.at_end:
+            fh.seek(0, 2)
+            fh.at_end = True
+        pos = fh.tell()
+        fh.write(encoded_doc)
+        self._set_loc_idx(collection, doc_id, pos)
         return True
 
-    def upload_metadata(self, location, doc):
-        return self.upload_doc(location, doc, if_gen_match=True)
+    def delete_doc(self, collection, doc_id):
+        doc_id = str(doc_id)
+        pos = self._get_loc_idx(collection).get(doc_id)
+        assert pos is not None
+        fh = self._get_coll_fh(collection)
+        fh.seek(pos)
+        fh.at_end = False
+        first_byte = fh.read(4)
+        doc_len = int.from_bytes(first_byte, 'little', signed=True)
+        fh.seek(pos)
+        fh.write(b'\x00' * doc_len)
+        self._set_loc_idx(collection, doc_id, None)
+        self._cache[collection].pop(doc_id, None)
+        return True
 
-    def download_metadata(self, location):
-        full_path = self._get_full_path(location)
-        if not os.path.exists(full_path):
+    def get_metadata(self, collection):
+        try:
+            return self._metadata[collection]
+        except KeyError:
+            pass
+
+        metadata_path = self._get_full_path(collection, '$.metadata')
+        try:
+            with open(metadata_path, 'rb') as f:
+                metadata = MetaStorageObject.from_storage(f.read(), from_bson=True)
+        except FileNotFoundError:
             return None
+        self._metadata[collection] = metadata
+        return metadata
 
-        doc_from_cache = self._cache.get(location)
-        with open(full_path, 'rb+') as f:
-            fcntl.lockf(f, fcntl.LOCK_EX)
-            existing_generation = int_from_bytes(f.read(8))
-            if doc_from_cache and doc_from_cache.generation == existing_generation:
-                return doc_from_cache
-            encoded = f.read()
-            doc = bson.decode(encoded)
-            fcntl.lockf(f, fcntl.LOCK_UN)
+    # def _rebuild_metadata(self, coll_path):
+    #     fh = self._get_coll_fh(coll_path)
+    #     pos = 0
+    #     fh.seek(0)
+    #     docs = []
+    #     while True:
+    #         first_byte = fh.read(4)
+    #         if not first_byte:
+    #             break
+    #         doc_len = int.from_bytes(first_byte, 'little', signed=True)
+    #         if not doc_len:
+    #             continue
+    #         doc = bson.decode(first_byte + fh.read(doc_len - 4))
+    #         docs.append((pos, doc))
+    #         pos += doc_len
 
-        so = MetaStorageObject(doc, existing_generation)
-        so.decode_indexes()
-        self._cache[location] = so
-        return so
+    #     metadata = {}
+    #     for pos, doc in docs:
+    #         metadata['loc_idx'][doc['_id']] = pos
+    #         self._cache[coll_path][doc['_id']] = doc
+    #     self._metadata[coll_path] = metadata
+    #     return metadata
 
-    def download_doc(self, location):
-        full_path = self._get_full_path(location)
+    def put_metadata(self, collection, metadata):
+        self._metadata[itrn(collection)] = metadata
+        metadata_path = self._get_full_path(collection, '$.metadata')
+        with open(metadata_path, 'wb') as f:
+            f.write(metadata.to_storage(as_bson=True))
+        loc_idx_path = self._get_full_path(collection, '$.loc_idx')
+        with open(loc_idx_path, 'wb') as f:
+            f.write(bson.encode(self._loc_idx.get(collection, {})))
 
-        doc_from_cache = self._cache.get(location)
-        with open(full_path, 'rb+') as f:
-            fcntl.lockf(f, fcntl.LOCK_EX)
-            generation = int_from_bytes(f.read(8))
-            if doc_from_cache and doc_from_cache.generation == generation:
-                return doc_from_cache
-            doc = bson.decode(f.read())
-            fcntl.lockf(f, fcntl.LOCK_UN)
-
-        so = StorageObject(doc, generation)
-        self._cache[location] = so
-        return so
-
-    def delete_doc(self, location):
-        full_path = self._get_full_path(location)
-        os.remove(full_path)
-        del self._cache[location]
         return True
 
-    def delete_dir(self, location):
-        with self.lock:
-            full_path = self._get_full_path(location)
-            if not os.path.isdir(full_path):
-                return False
-            shutil.rmtree(full_path)
-            for k in list(self._cache.keys()):
-                if k.is_in_collection_incl_metadata(location):
-                    del self._cache[k]
+    def delete_dir(self, collection):
+        full_path = self._get_full_path(collection)
+        if not os.path.isdir(full_path):
+            return False
+        shutil.rmtree(full_path)
+        self._cache.pop(collection, None)
+        self._metadata.pop(collection, None)
+        self._loc_idx.pop(collection, None)
         return True
 
-    def doc_exists(self, location):
-        if location in self._cache:
-            return True
-        full_path = self._get_full_path(location)
-        return os.path.exists(full_path)
-
-    def list_ids(self, collection_location, limit=None):
-        print("listing %s" % collection_location)
-        assert collection_location.is_collection()
-
-        full_path = self._get_full_path(collection_location)
-        if not os.path.exists(full_path):
-            print("listed0 0")
-            return []
-
-        ret = []
+    def list_ids(self, collection, limit=None):
+        keys = self._get_loc_idx(collection).keys()
         if limit is None:
-            for _id in os.listdir(full_path):
-                if not _id.startswith('$'):
-                    ret.append(_id)
-            print("listed1 %d" % len(ret))
-            print('count in cache list_ids %d' % sum(1 for k in self._cache.keys() if not 'metadata' in k.path))
-            return ret
-        i = 0
-        for _id in os.listdir(full_path):
-            if not _id.startswith('$'):
-                ret.append(_id)
-                i += 1
-                if i == limit:
-                    break
-        print("listed2 %d" % len(ret))
-        print('count in cache list_ids %d' % sum(1 for k in self._cache.keys() if not 'metadata' in k.path))
-        return ret
+            return list(map(str, keys))
+        return list(map(str, itertools.islice(keys, limit)))
 
-    def create_path(self, location):
-        full_loc = os.path.join(self.base_storage_path, location.parent_path())
+    def create_path(self, collection):
+        full_loc = self._get_full_path(collection)
         if not os.path.exists(full_loc):
             os.makedirs(full_loc)
 
     def close(self):
-        self._cache = {}
+        self._cache = collections.defaultdict(dict)
+        self._metadata = {}
+        self._loc_idx = {}
+        for fh in self._collection_fhs.values():
+            fh.close()
+        self._collection_fhs = {}

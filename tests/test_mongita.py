@@ -15,7 +15,7 @@ import mongita
 from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDING,
                      errors, results, cursor, collection, command_cursor, database,
                      engines)
-from mongita.common import Location, StorageObject
+# from mongita.common import StorageObject
 
 
 TEST_DOCS = [
@@ -218,7 +218,7 @@ def test_find_one(client_class):
     assert not coll.find_one({'weight': {'bigger': 7}})
 
     doc = coll.find_one()
-    assert isinstance(doc, dict) and not isinstance(doc, StorageObject)
+    assert isinstance(doc, dict) #and not isinstance(doc, StorageObject)
     assert isinstance(doc['continents'], list)
     assert isinstance(doc['_id'], bson.objectid.ObjectId)
     del doc['_id']
@@ -268,7 +268,7 @@ def test_find(client_class):
     docs = list(doc_cursor)
     assert len(docs) == LEN_TEST_DOCS
     assert all(isinstance(doc, dict) for doc in docs)
-    assert all(not isinstance(doc, StorageObject) for doc in docs)
+    # assert all(not isinstance(doc, StorageObject) for doc in docs)
     assert all(isinstance(doc['_id'], bson.objectid.ObjectId) for doc in docs)
     docs = list(coll.find())
 
@@ -294,6 +294,10 @@ def test_find(client_class):
     # string limit
     with pytest.raises(TypeError):
         list(coll.find({}, sort=[('weight', DESCENDING)], limit='3'))
+
+    # multiple ids
+    finds = list(coll.find({'_id': {'$in': imr.inserted_ids + ['not_real_id']}}))
+    assert len(finds) == LEN_TEST_DOCS
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -415,6 +419,7 @@ def test_replace_one(client_class):
         coll.replace_one({'_id': 'a'})
 
     doc = coll.find_one({'name': TEST_DOCS[0]['name']})
+    assert doc['name'] == TEST_DOCS[0]['name']
     assert '_id' not in TEST_DOCS[1]
     ur = coll.replace_one({'_id': doc['_id']}, TEST_DOCS[1])
     assert '_id' not in TEST_DOCS[1]
@@ -847,13 +852,13 @@ def test_bad_import(client_class):
         mongita.mongodb_fictional_method()
 
 
-@pytest.mark.parametrize("client_class", CLIENTS)
-def test_common(client_class):
-    assert isinstance(repr(Location('a')), str)
-    assert Location(database='a', collection='b').path == 'a/b'
-    assert Location(database='a', collection='b', _id='c').path == 'a/b/c'
-    assert Location(database='a', _id='c').path == 'a/c'
-    assert Location(_id='c').path == 'c'
+# @pytest.mark.parametrize("client_class", CLIENTS)
+# def test_common(client_class):
+#     assert isinstance(repr(Location('a')), str)
+#     assert Location(database='a', collection='b').path == 'a/b'
+#     assert Location(database='a', collection='b', _id='c').path == 'a/b/c'
+#     assert Location(database='a', _id='c').path == 'a/c'
+#     assert Location(_id='c').path == 'c'
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1126,6 +1131,34 @@ def test_close_memory():
     assert not client.engine._cache
     assert client.db.snake_hunter.count_documents({}) == 0
     assert set(coll.distinct('name')) == set()
+
+
+def test_secure_disk():
+    try:
+        shutil.rmtree(TEST_DIR)
+    except:
+        pass
+    client = _MongitaClientDisk()
+    client['../evil']['./very'].insert_one({'boo': 'boo'})
+    assert '../evil../very' in client.engine._cache
+    assert list(client.list_database_names()) == ['../evil']
+    assert list(client['../evil'].list_collection_names()) == ['./very']
+    full_path = client.engine._get_full_path('../evil../very')
+    assert './' not in full_path
+    assert full_path.startswith(client.engine.base_storage_path)
+    assert '/' not in full_path[len(client.engine.base_storage_path) + 1:]
+
+    client.close()
+
+    client['CON']['NUL'].insert_one({'boo': 'boo'})
+    assert 'CON.NUL' in client.engine._cache
+    full_path = client.engine._get_full_path('CON.NUL')
+    assert set(client.list_database_names()) == {'../evil', 'CON'}
+    assert list(client.CON.list_collection_names()) == ['NUL']
+    full_path = client.engine._get_full_path('CON.NUL')
+    assert not full_path.startswith('CON')
+    assert not full_path[len(client.engine.base_storage_path) + 1:].startswith('CON')
+
 
 
 def test_close_disk():

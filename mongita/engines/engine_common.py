@@ -3,7 +3,7 @@ import abc
 
 class Engine(abc.ABC):
     @abc.abstractmethod
-    def upload_doc(self, location, doc, generation=None):
+    def put_doc(self, location, doc, generation=None):
         """
         :param location Location: Location obj
         :param doc dict: document as a dict
@@ -17,13 +17,13 @@ class Engine(abc.ABC):
         """
 
     @abc.abstractmethod
-    def download_doc(self, location):
+    def get_doc(self, location):
         """
         :param location Location: Location obj
         :rtype: dict
 
         Given a location, download a doc
-        If the doc doesn't exist, raise a MongitaError
+        If the doc doesn't exist, raise a MongitaError TODO I dn't hink this happens
         """
 
     @abc.abstractmethod
@@ -73,7 +73,7 @@ class Engine(abc.ABC):
         """
 
     @abc.abstractmethod
-    def upload_metadata(self, location, doc):
+    def put_metadata(self, location, doc):
         """
         :param location Location: Location obj
         :param doc dict:
@@ -84,7 +84,7 @@ class Engine(abc.ABC):
         """
 
     @abc.abstractmethod
-    def download_metadata(self, location):
+    def get_metadata(self, location):
         """
         :param location Location: Location obj
         :rtype: dict

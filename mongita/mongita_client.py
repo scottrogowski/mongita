@@ -5,7 +5,7 @@ import pathlib
 
 import bson
 
-from .common import support_alert, Location, ok_name, MetaStorageObject
+from .common import support_alert, ok_name, MetaStorageObject
 from .command_cursor import CommandCursor
 from .database import Database
 from .errors import MongitaNotImplementedError, InvalidName
@@ -19,7 +19,7 @@ class MongitaClient(abc.ABC):
     __metaclass__ = abc.ABCMeta
 
     def __init__(self):
-        self._metadata_location = Location(_id='$.metadata')
+        self._base_location = ''
         self._cache = {}
 
     def __getattr__(self, attr):
@@ -43,18 +43,18 @@ class MongitaClient(abc.ABC):
         something, this will create a small metadata file to basically just store
         our database_names
         """
-        metadata = self.engine.download_metadata(self._metadata_location)
+        metadata = self.engine.get_metadata(self._base_location)
         if metadata:
             if db_name not in metadata['database_names']:
                 metadata['database_names'].append(db_name)
-                assert self.engine.upload_metadata(self._metadata_location, metadata)
+                assert self.engine.put_metadata(self._base_location, metadata)
             return
         metadata = MetaStorageObject({
             'options': {},
             'database_names': [db_name],
             'uuid': str(bson.ObjectId()),
         })
-        assert self.engine.upload_metadata(self._metadata_location, metadata)
+        assert self.engine.put_metadata(self._base_location, metadata)
 
     @support_alert
     def close(self):
@@ -72,7 +72,7 @@ class MongitaClient(abc.ABC):
 
         :rtype: list[str]
         """
-        metadata = self.engine.download_metadata(self._metadata_location)
+        metadata = self.engine.get_metadata(self._base_location)
         if metadata:
             return metadata['database_names']
         return []
@@ -104,16 +104,15 @@ class MongitaClient(abc.ABC):
         else:
             db_name = name_or_database
 
-        metadata = self.engine.download_metadata(self._metadata_location)
-        if metadata and name_or_database in metadata['database_names']:
-            metadata['database_names'].remove(name_or_database)
-            assert self.engine.upload_metadata(self._metadata_location, metadata)
-        location = Location(database=db_name)
-        self.engine.delete_dir(location)
-        try:
-            del self._cache[db_name]
-        except KeyError:
-            pass
+        db = self[db_name]
+        for coll in db.list_collection_names():
+            db.drop_collection(coll)
+        metadata = self.engine.get_metadata(self._base_location)
+        if metadata and db_name in metadata['database_names']:
+            metadata['database_names'].remove(db_name)
+            assert self.engine.put_metadata(self._base_location, metadata)
+        self.engine.delete_dir(db_name)
+        self._cache.pop(db_name, None)
 
 
 class MongitaClientDisk(MongitaClient):

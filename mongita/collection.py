@@ -4,7 +4,7 @@ import bson
 import sortedcontainers
 
 from .cursor import Cursor, _validate_sort
-from .common import support_alert, Location, ASCENDING, DESCENDING, StorageObject, MetaStorageObject
+from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
 from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
 
@@ -487,11 +487,10 @@ class Collection():
         self.database = database
         self._engine = database._engine
         self._existence_verified = False
-        self._base_location = Location(database=database.name,
-                                       collection=collection_name)
-        self._metadata_location = Location(database=database.name,
-                                           collection=collection_name,
-                                           _id='$.metadata')
+        self._base_location = f'{database.name}.{collection_name}'
+        # self._metadata_location = Location(database=database.name,
+        #                                    collection=collection_name,
+        #                                    _id='$.metadata') # TODO
 
     def __repr__(self):
         return "Collection(%s, %r)" % (repr(self.database), self.name)
@@ -511,11 +510,11 @@ class Collection():
 
     @property
     def full_name(self):
-        return self.database.name + '.' + self.name
+        return self._base_location
 
-    def _get_location(self, object_id):
-        """Given an object_id, return the Location object"""
-        return Location(self.database.name, self.name, object_id)
+    # def _get_location(self, object_id):
+    #     """Given an object_id, return the Location object"""
+    #     return Location(self._base_location, object_id)
 
     def _create(self):
         """
@@ -526,14 +525,14 @@ class Collection():
         if self._existence_verified:
             return
         with self._engine.lock:
-            if not self._engine.doc_exists(self._metadata_location):
+            if not self._engine.get_metadata(self._base_location):
                 self._engine.create_path(self._base_location)
                 metadata = MetaStorageObject({
                     'options': {},
                     'indexes': {},
                     '_id': str(bson.ObjectId()),
                 })
-                assert self._engine.upload_metadata(self._metadata_location, metadata)
+                assert self._engine.put_metadata(self._base_location, metadata)
             self.database._create(self.name)
         self._existence_verified = True
 
@@ -544,11 +543,10 @@ class Collection():
         :param document dict:
         :rtype: None
         """
-        document_location = self._get_location(document['_id'])
-        success = self._engine.upload_doc(document_location, document,
-                                          if_gen_match=True)
+        success = self._engine.put_doc(self.full_name, document,
+                                       no_overwrite=True)
         if not success:
-            assert self._engine.doc_exists(document_location)
+            assert self._engine.doc_exists(self.full_name, document['_id'])
             raise DuplicateKeyError("Document %r already exists" % document['_id'])
 
     @support_alert
@@ -560,7 +558,7 @@ class Collection():
         :rtype: results.InsertOneResult
         """
         _validate_doc(document)
-        document = StorageObject(document)
+        document = dict(document)
         document['_id'] = document.get('_id') or bson.ObjectId()
         self._create()
         with self._engine.lock:
@@ -584,7 +582,7 @@ class Collection():
         ready_docs = []
         for doc in documents:
             _validate_doc(doc)
-            doc = StorageObject(doc)
+            doc = dict(doc)
             doc['_id'] = doc.get('_id') or bson.ObjectId()
             ready_docs.append(doc)
         self._create()
@@ -623,7 +621,7 @@ class Collection():
         _validate_doc(replacement)
         self._create()
 
-        replacement = StorageObject(replacement)
+        replacement = dict(replacement)
 
         doc_id = self._find_one_id(filter)
         if not doc_id:
@@ -638,7 +636,7 @@ class Collection():
         replacement['_id'] = doc_id
         with self._engine.lock:
             metadata = self._get_metadata()
-            assert self._engine.upload_doc(self._get_location(doc_id), replacement)
+            assert self._engine.put_doc(self.full_name, replacement)
             self._update_indicies([replacement], metadata)
             return UpdateResult(1, 1)
 
@@ -655,9 +653,8 @@ class Collection():
             return self._engine.find_one_id(self._base_location)
 
         if '_id' in filter:
-            location = self._get_location(filter['_id'])
-            if self._engine.doc_exists(location):
-                return location._id
+            if self._engine.doc_exists(self.full_name, filter['_id']):
+                return filter['_id']
             return None
 
         try:
@@ -675,7 +672,7 @@ class Collection():
         """
         doc_id = self._find_one_id(filter, sort)
         if doc_id:
-            doc = self._engine.download_doc(self._get_location(doc_id))
+            doc = self._engine.get_doc(self.full_name, doc_id)
             if doc:
                 return dict(doc)
 
@@ -714,7 +711,7 @@ class Collection():
         if sort:
             docs_to_return = []
             for doc_id in doc_ids:
-                doc = self._engine.download_doc(self._get_location(doc_id))
+                doc = self._engine.get_doc(self.full_name, doc_id)
                 if _doc_matches_slow_filters(doc, slow_filters):
                     docs_to_return.append(doc)
             _sort_docs(docs_to_return, sort)
@@ -732,14 +729,14 @@ class Collection():
 
         if limit is None:
             for doc_id in doc_ids:
-                doc = self._engine.download_doc(self._get_location(doc_id))
+                doc = self._engine.get_doc(self.full_name, doc_id)
                 if _doc_matches_slow_filters(doc, slow_filters):
                     yield doc['_id']
             return
 
         i = 0
         for doc_id in doc_ids:
-            doc = self._engine.download_doc(self._get_location(doc_id))
+            doc = self._engine.get_doc(self.full_name, doc_id)
             if _doc_matches_slow_filters(doc, slow_filters):
                 yield doc['_id']
                 i += 1
@@ -759,7 +756,7 @@ class Collection():
         """
 
         for doc_id in self._find_ids(filter, sort, limit, metadata=metadata):
-            doc = self._engine.download_doc(self._get_location(doc_id))
+            doc = self._engine.get_doc(self.full_name, doc_id)
             yield dict(doc)
 
     @support_alert
@@ -810,11 +807,10 @@ class Collection():
         :param update dict:
         :rtype: dict
         """
-        loc = self._get_location(doc_id)
-        doc = self._engine.download_doc(loc)
+        doc = self._engine.get_doc(self.full_name, doc_id)
         for update_op, update_op_dict in update.items():
             _set_item_in_doc(update_op, update_op_dict, doc)
-        assert self._engine.upload_doc(loc, doc, if_gen_match=True)
+        assert self._engine.put_doc(self.full_name, doc)  # TODO #, if_gen_match=True)
         return dict(doc)
 
     @support_alert
@@ -889,10 +885,9 @@ class Collection():
         if not doc_id:
             return DeleteResult(0)
 
-        loc = self._get_location(doc_id)
         with self._engine.lock:
             metadata = self._get_metadata()
-            self._engine.delete_doc(loc)
+            self._engine.delete_doc(self.full_name, doc_id)
             self._update_indicies_deletes([doc_id], metadata)
         return DeleteResult(1)
 
@@ -912,7 +907,7 @@ class Collection():
         with self._engine.lock:
             metadata = self._get_metadata()
             for doc_id in doc_ids:
-                if self._engine.delete_doc(self._get_location(doc_id)):
+                if self._engine.delete_doc(self.full_name, doc_id):
                     success_deletes.append(doc_id)
             self._update_indicies_deletes(success_deletes, metadata)
         return DeleteResult(len(success_deletes))
@@ -956,7 +951,7 @@ class Collection():
 
         :rtype: dict
         """
-        return self._engine.download_metadata(self._metadata_location) or {}
+        return self._engine.get_metadata(self._base_location) or {}
 
     def _update_indicies_deletes(self, doc_ids, metadata):
         """
@@ -971,7 +966,7 @@ class Collection():
             return metadata
         for idx_doc in metadata.get('indexes', {}).values():
             _remove_docs_from_idx_doc(doc_ids, idx_doc)
-        assert self._engine.upload_metadata(self._metadata_location, metadata)
+        assert self._engine.put_metadata(self._base_location, metadata)
         return metadata
 
     def _update_indicies(self, documents, metadata):
@@ -985,7 +980,7 @@ class Collection():
         """
         for idx_doc in metadata.get('indexes', {}).values():
             _update_idx_doc_with_new_documents(documents, idx_doc)
-        assert self._engine.upload_metadata(self._metadata_location, metadata)
+        assert self._engine.put_metadata(self._base_location, metadata)
         return metadata
 
     @support_alert
@@ -1026,7 +1021,7 @@ class Collection():
             metadata = self._get_metadata()
             _update_idx_doc_with_new_documents(self._find({}, metadata=metadata), idx_doc)
             metadata['indexes'][idx_name] = idx_doc
-            assert self._engine.upload_metadata(self._metadata_location, metadata)
+            assert self._engine.put_metadata(self._base_location, metadata)
         return idx_name
 
     @support_alert
@@ -1055,7 +1050,7 @@ class Collection():
         with self._engine.lock:
             metadata = self._get_metadata()
             del metadata['indexes'][index_or_name]
-            assert self._engine.upload_metadata(self._metadata_location, metadata)
+            assert self._engine.put_metadata(self._base_location, metadata)
 
     @support_alert
     def index_information(self):

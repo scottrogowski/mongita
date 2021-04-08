@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import cProfile
+
 from datetime import datetime
 import functools
 import json
@@ -14,6 +16,7 @@ import bson
 from bson import json_util
 import coolname
 # import plotly
+import msgpack
 import mongita
 import pymongo
 import lorem
@@ -26,9 +29,9 @@ NOW_TS = int(datetime.now().timestamp())
 
 def get_doc():
     return {
-        '_id': bson.ObjectId(),
+        '_id': str(bson.ObjectId()),
         'name': coolname.generate_slug(),
-        'dt': datetime.fromtimestamp(random.randint(0, NOW_TS)),
+        'dt': str(datetime.fromtimestamp(random.randint(0, NOW_TS))),
         'count': random.randint(0, 5000),
         'city': random.choice(('Philly', 'Santa Fe', 'Reno')),
         'content': ' '.join(lorem.paragraph() for _ in range(3)),
@@ -147,11 +150,23 @@ def benchmark():
         client_name = repr(client)
         print("Processing %s")
 
-def test_write_open_file(insert_docs):
+def test_write_open_file_bson(insert_docs):
     with open('/tmp/10kdocs.bson', 'wb') as f:
         start_write_10k = time.perf_counter()
         f.write(bson.encode({'docs': insert_docs}))
-    print("Wrote 10k docs in %.2f" % (time.perf_counter() - start_write_10k))
+    print("Wrote 10k docs in %.2f (bson)" % (time.perf_counter() - start_write_10k))
+
+def test_write_open_file_json(insert_docs):
+    with open('/tmp/10kdocs.json', 'w') as f:
+        start_write_10k = time.perf_counter()
+        f.write(json.dumps({'docs': insert_docs}))
+    print("Wrote 10k docs in %.2f (json)" % (time.perf_counter() - start_write_10k))
+
+def test_write_open_file_msgpack(insert_docs):
+    with open('docs.msgpack', 'wb') as f:
+        start_write_10k = time.perf_counter()
+        f.write(msgpack.dumps({'docs': insert_docs}))
+    print("Wrote 10k docs in %.2f (msgpack)" % (time.perf_counter() - start_write_10k))
 
 def test_write_individual_docs(insert_docs):
     shutil.rmtree('/tmp/docs/')
@@ -203,16 +218,19 @@ def bm():
     avg_len = sum(len(bson.encode(doc)) for doc in insert_docs) / 10000
     print("Got docs. Average bson length=%.2f" % avg_len)
     print()
-    # test_write_open_file(insert_docs)
+
+    test_write_open_file_bson(insert_docs)
+    # test_write_open_file_json(insert_docs)
+    test_write_open_file_msgpack(insert_docs)
     # test_write_individual_docs(insert_docs)
     # test_write_append_docs(insert_docs)
     # test_write_sqlite_docs(insert_docs)
     clients = [
         # TinyMongoClient,
         # functools.partial(MontyClient, ":memory:"),
-        SqliteWrapper,
         mongita.MongitaClientMemory,
         functools.partial(mongita.MongitaClientDisk, '/tmp/mongita_benchmarks'),
+        SqliteWrapper,
         pymongo.MongoClient,
     ]
 
@@ -224,35 +242,55 @@ def bm():
             cli.drop_database('mongita_benchmark')
         except:
             pass
-        start = time.perf_counter()
-        cli.mongita_benchmark.mongita_benchmark.insert_many(insert_docs)
-        print("insert: %.2f" % (time.perf_counter() - start))
-        start = time.perf_counter()
-        list(cli.mongita_benchmark.mongita_benchmark.find({}))
-        print("find all docs: %.2f" % (time.perf_counter() - start))
+
 
         start = time.perf_counter()
-        list(cli.mongita_benchmark.mongita_benchmark.find_one({'_id': _id})
+        cli.bm.bm.insert_many(insert_docs)
+        print("insert: %.2f" % (time.perf_counter() - start))
+
+        if isinstance(cli, mongita.MongitaClientDisk):
+            pr = cProfile.Profile()
+            pr.enable()
+
+        start = time.perf_counter()
+        list(cli.bm.bm.find({}))
+        print("find all docs: %.2f" % (time.perf_counter() - start))
+
+        if isinstance(cli, mongita.MongitaClientDisk):
+            pr.disable()
+            import io, pstats
+            s = io.StringIO()
+            sortby = pstats.SortKey.CUMULATIVE
+            ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+            ps.print_stats()
+            print(s.getvalue())
+
+
+        start = time.perf_counter()
+        list(cli.bm.bm.find_one({'_id': _id})
              for _id in random.sample(insert_doc_ids, 1000))
         print("find_one 1000 random elements: %.2f" % (time.perf_counter() - start))
 
+
         start = time.perf_counter()
-        list(cli.mongita_benchmark.mongita_benchmark.find({'city': 'Reno'}))
+        list(cli.bm.bm.find({'city': 'Reno'}))
         print("find category to list: %.2f" % (time.perf_counter() - start))
 
+
+
         start = time.perf_counter()
-        list(cli.mongita_benchmark.mongita_benchmark.find({'percent': {'$lt': .33}}))
+        list(cli.bm.bm.find({'percent': {'$lt': .33}}))
         print("find float to list: %.2f" % (time.perf_counter() - start))
 
-        cli.mongita_benchmark.mongita_benchmark.create_index('city')
-        cli.mongita_benchmark.mongita_benchmark.create_index('percent')
+        cli.bm.bm.create_index('city')
+        cli.bm.bm.create_index('percent')
 
         start = time.perf_counter()
-        list(cli.mongita_benchmark.mongita_benchmark.find({'city': 'Reno'}))
+        list(cli.bm.bm.find({'city': 'Reno'}))
         print("find category to list (indexed): %.2f" % (time.perf_counter() - start))
 
         start = time.perf_counter()
-        list(cli.mongita_benchmark.mongita_benchmark.find({'percent': {'$lt': .33}}))
+        list(cli.bm.bm.find({'percent': {'$lt': .33}}))
         print("find float to list (indexed): %.2f" % (time.perf_counter() - start))
         print()
 
