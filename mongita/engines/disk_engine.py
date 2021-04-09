@@ -12,9 +12,6 @@ from ..common import MetaStorageObject, secure_filename
 from .engine_common import Engine
 
 
-# TODO assert path is not relative.
-
-
 class DiskEngine(Engine):
     def __init__(self, base_storage_path):
         if not os.path.exists(base_storage_path):
@@ -81,7 +78,7 @@ class DiskEngine(Engine):
         fh.at_end = False
         first_byte = fh.read(4)
         doc_len = int.from_bytes(first_byte, 'little', signed=True)
-        doc = bson.decode(first_byte + fh.read(doc_len - 4))
+        doc = bson.decode(first_byte + fh.read(doc_len - 4))  # TODO some bug here
         self._cache[itrn(collection)][itrn(doc_id)] = doc
         return doc
 
@@ -142,6 +139,7 @@ class DiskEngine(Engine):
         self._metadata[collection] = metadata
         return metadata
 
+    # TODO disaster recovery rebuilds
     # def _rebuild_metadata(self, coll_path):
     #     fh = self._get_coll_fh(coll_path)
     #     pos = 0
