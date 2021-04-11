@@ -5,7 +5,7 @@ import sortedcontainers
 
 from .cursor import Cursor, _validate_sort
 from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
-from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError
+from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError, InvalidName
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
 
 
@@ -83,6 +83,9 @@ def _validate_doc(doc):
     if _id:
         if not isinstance(_id, (bson.ObjectId, str)):
             raise MongitaError("The document _id must be a bson ObjectId, a string, or not present")
+    for k in doc.keys():
+        if not k or k.startswith('$'):
+            raise InvalidName("All document keys must be truthy and cannot start with '$'.")
 
 
 def _doc_matches_agg(doc_v, query_ops):
@@ -516,7 +519,7 @@ class Collection():
     #     """Given an object_id, return the Location object"""
     #     return Location(self._base_location, object_id)
 
-    def _create(self):
+    def __create(self):
         """
         MongoDB doesn't require you to explicitly create collections. They
         are created when first accessed. This creates the collection and is
@@ -533,10 +536,10 @@ class Collection():
                     '_id': str(bson.ObjectId()),
                 })
                 assert self._engine.put_metadata(self._base_location, metadata)
-            self.database._create(self.name)
+            self.database.__create(self.name)
         self._existence_verified = True
 
-    def _insert_one(self, document):
+    def __insert_one(self, document):
         """
         Insert a single document.
 
@@ -560,11 +563,11 @@ class Collection():
         _validate_doc(document)
         document = dict(document)
         document['_id'] = document.get('_id') or bson.ObjectId()
-        self._create()
+        self.__create()
         with self._engine.lock:
-            metadata = self._get_metadata()
-            self._insert_one(document)
-            self._update_indicies([document], metadata)
+            metadata = self.__get_metadata()
+            self.__insert_one(document)
+            self.__update_indicies([document], metadata)
         return InsertOneResult(document['_id'])
 
     @support_alert
@@ -585,22 +588,22 @@ class Collection():
             doc = dict(doc)
             doc['_id'] = doc.get('_id') or bson.ObjectId()
             ready_docs.append(doc)
-        self._create()
+        self.__create()
         success_docs = []
         exception = None
         with self._engine.lock:
-            metadata = self._get_metadata()
+            metadata = self.__get_metadata()
             for doc in ready_docs:
                 try:
-                    self._insert_one(doc)
+                    self.__insert_one(doc)
                     success_docs.append(doc)
                 except Exception as ex:
                     if ordered:
-                        self._update_indicies(success_docs, metadata)
+                        self.__update_indicies(success_docs, metadata)
                         raise MongitaError("Ending insert_many because of error") from ex
                     exception = ex
                     continue
-            self._update_indicies(success_docs, metadata)
+            self.__update_indicies(success_docs, metadata)
         if exception:
             raise MongitaError("Not all documents inserted") from exception
         return InsertManyResult(success_docs)
@@ -619,28 +622,28 @@ class Collection():
         filter = filter or {}
         _validate_filter(filter)
         _validate_doc(replacement)
-        self._create()
+        self.__create()
 
         replacement = dict(replacement)
 
-        doc_id = self._find_one_id(filter)
+        doc_id = self.__find_one_id(filter)
         if not doc_id:
             if upsert:
                 with self._engine.lock:
-                    metadata = self._get_metadata()
+                    metadata = self.__get_metadata()
                     replacement['_id'] = replacement.get('_id') or bson.ObjectId()
-                    self._insert_one(replacement)
-                    self._update_indicies([replacement], metadata)
+                    self.__insert_one(replacement)
+                    self.__update_indicies([replacement], metadata)
                 return UpdateResult(0, 1, replacement['_id'])
             return UpdateResult(0, 0)
         replacement['_id'] = doc_id
         with self._engine.lock:
-            metadata = self._get_metadata()
+            metadata = self.__get_metadata()
             assert self._engine.put_doc(self.full_name, replacement)
-            self._update_indicies([replacement], metadata)
+            self.__update_indicies([replacement], metadata)
             return UpdateResult(1, 1)
 
-    def _find_one_id(self, filter, sort=None):
+    def __find_one_id(self, filter, sort=None):
         """
         Given the filter, return a single object_id or None.
 
@@ -658,11 +661,11 @@ class Collection():
             return None
 
         try:
-            return next(self._find_ids(filter, sort))
+            return next(self.__find_ids(filter, sort))
         except StopIteration:
             return None
 
-    def _find_one(self, filter, sort):
+    def __find_one(self, filter, sort):
         """
         Given the filter, return a single doc or None.
 
@@ -670,13 +673,13 @@ class Collection():
         :param sort list[(key, direction)]|None
         :rtype: dict|None
         """
-        doc_id = self._find_one_id(filter, sort)
+        doc_id = self.__find_one_id(filter, sort)
         if doc_id:
             doc = self._engine.get_doc(self.full_name, doc_id)
             if doc:
                 return dict(doc)
 
-    def _find_ids(self, filter, sort=None, limit=None, metadata=None):
+    def __find_ids(self, filter, sort=None, limit=None, metadata=None):
         """
         Given a filter, find all doc_ids that match this filter.
         Be sure to also sort and limit them.
@@ -696,7 +699,7 @@ class Collection():
         if limit == 0:
             return
 
-        metadata = metadata or self._get_metadata()
+        metadata = metadata or self.__get_metadata()
         slow_filters, indx_ops = _split_filter(filter, metadata)
 
         # If we have index ops, we can use those ids as a starting point.
@@ -743,7 +746,7 @@ class Collection():
                 if i == limit:
                     return
 
-    def _find(self, filter, sort=None, limit=None, metadata=None):
+    def __find(self, filter, sort=None, limit=None, metadata=None):
         """
         Given a filter, find all docs that match this filter.
         This method returns a generator.
@@ -755,7 +758,7 @@ class Collection():
         :rtype: Generator(list[dict])
         """
 
-        for doc_id in self._find_ids(filter, sort, limit, metadata=metadata):
+        for doc_id in self.__find_ids(filter, sort, limit, metadata=metadata):
             doc = self._engine.get_doc(self.full_name, doc_id)
             yield dict(doc)
 
@@ -774,7 +777,7 @@ class Collection():
 
         if sort is not None:
             sort = _validate_sort(sort)
-        return self._find_one(filter, sort)
+        return self.__find_one(filter, sort)
 
     @support_alert
     def find(self, filter=None, sort=None, limit=None):
@@ -796,9 +799,9 @@ class Collection():
         if limit is not None and not isinstance(limit, int):
             raise TypeError('Limit must be an integer')
 
-        return Cursor(self._find, filter, sort, limit)
+        return Cursor(self.__find, filter, sort, limit)
 
-    def _update_doc(self, doc_id, update):
+    def __update_doc(self, doc_id, update):
         """
         Given a doc_id and an update dict, find the document and safely update it.
         Returns the updated document
@@ -827,18 +830,18 @@ class Collection():
 
         _validate_filter(filter)
         _validate_update(update)
-        self._create()
+        self.__create()
         if upsert:
             raise MongitaNotImplementedError("Mongita does not support 'upsert' on update operations. Use `replace_one`.")
 
-        doc_ids = list(self._find_ids(filter))
+        doc_ids = list(self.__find_ids(filter))
         matched_count = len(doc_ids)
         if not matched_count:
             return UpdateResult(matched_count, 0)
         with self._engine.lock:
-            metadata = self._get_metadata()
-            doc = self._update_doc(doc_ids[0], update)
-            self._update_indicies([doc], metadata)
+            metadata = self.__get_metadata()
+            doc = self.__update_doc(doc_ids[0], update)
+            self.__update_indicies([doc], metadata)
         return UpdateResult(matched_count, 1)
 
     @support_alert
@@ -854,20 +857,20 @@ class Collection():
         """
         _validate_filter(filter)
         _validate_update(update)
-        self._create()
+        self.__create()
         if upsert:
             raise MongitaNotImplementedError("Mongita does not support 'upsert' on update operations. Use `replace_one`.")
 
         success_docs = []
         matched_cnt = 0
-        doc_ids = list(self._find_ids(filter))
+        doc_ids = list(self.__find_ids(filter))
         with self._engine.lock:
-            metadata = self._get_metadata()
+            metadata = self.__get_metadata()
             for doc_id in doc_ids:
-                doc = self._update_doc(doc_id, update)
+                doc = self.__update_doc(doc_id, update)
                 success_docs.append(doc)
                 matched_cnt += 1
-            self._update_indicies(success_docs, metadata)
+            self.__update_indicies(success_docs, metadata)
         return UpdateResult(matched_cnt, len(success_docs))
 
     @support_alert
@@ -879,16 +882,16 @@ class Collection():
         :rtype: results.DeleteResult
         """
         _validate_filter(filter)
-        self._create()
+        self.__create()
 
-        doc_id = self._find_one_id(filter)
+        doc_id = self.__find_one_id(filter)
         if not doc_id:
             return DeleteResult(0)
 
         with self._engine.lock:
-            metadata = self._get_metadata()
+            metadata = self.__get_metadata()
             self._engine.delete_doc(self.full_name, doc_id)
-            self._update_indicies_deletes([doc_id], metadata)
+            self.__update_indicies_deletes([doc_id], metadata)
         return DeleteResult(1)
 
     @support_alert
@@ -900,16 +903,16 @@ class Collection():
         :rtype: results.DeleteResult
         """
         _validate_filter(filter)
-        self._create()
+        self.__create()
 
-        doc_ids = list(self._find_ids(filter))
+        doc_ids = list(self.__find_ids(filter))
         success_deletes = []
         with self._engine.lock:
-            metadata = self._get_metadata()
+            metadata = self.__get_metadata()
             for doc_id in doc_ids:
                 if self._engine.delete_doc(self.full_name, doc_id):
                     success_deletes.append(doc_id)
-            self._update_indicies_deletes(success_deletes, metadata)
+            self.__update_indicies_deletes(success_deletes, metadata)
         return DeleteResult(len(success_deletes))
 
     @support_alert
@@ -922,7 +925,7 @@ class Collection():
         :rtype: int
         """
         _validate_filter(filter)
-        return len(list(self._find_ids(filter)))
+        return len(list(self.__find_ids(filter)))
 
     @support_alert
     def distinct(self, key, filter=None):
@@ -944,7 +947,7 @@ class Collection():
         uniq.discard(None)
         return list(uniq)
 
-    def _get_metadata(self):
+    def __get_metadata(self):
         """
         Thin wrapper to get metadata.
         Always be sure to lock the engine when modifying metadata
@@ -953,7 +956,7 @@ class Collection():
         """
         return self._engine.get_metadata(self._base_location) or {}
 
-    def _update_indicies_deletes(self, doc_ids, metadata):
+    def __update_indicies_deletes(self, doc_ids, metadata):
         """
         Given a list of deleted document ids, remove those documents from all indexes.
         Returns the new metadata dictionary.
@@ -969,7 +972,7 @@ class Collection():
         assert self._engine.put_metadata(self._base_location, metadata)
         return metadata
 
-    def _update_indicies(self, documents, metadata):
+    def __update_indicies(self, documents, metadata):
         """
         Given a list of deleted document ids, add those documents to all indexes.
         Returns the new metadata dictionary.
@@ -1018,8 +1021,8 @@ class Collection():
         }
 
         with self._engine.lock:
-            metadata = self._get_metadata()
-            _update_idx_doc_with_new_documents(self._find({}, metadata=metadata), idx_doc)
+            metadata = self.__get_metadata()
+            _update_idx_doc_with_new_documents(self.__find({}, metadata=metadata), idx_doc)
             metadata['indexes'][idx_name] = idx_doc
             assert self._engine.put_metadata(self._base_location, metadata)
         return idx_name
@@ -1048,7 +1051,7 @@ class Collection():
             raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
 
         with self._engine.lock:
-            metadata = self._get_metadata()
+            metadata = self.__get_metadata()
             del metadata['indexes'][index_or_name]
             assert self._engine.put_metadata(self._base_location, metadata)
 
@@ -1061,7 +1064,7 @@ class Collection():
         """
 
         ret = [{'_id_': {'key': [('_id', 1)]}}]
-        metadata = self._get_metadata()
+        metadata = self.__get_metadata()
         for idx in metadata.get('indexes', {}).values():
             ret.append({idx['_id']: {'key': [(idx['key_str'], idx['direction'])]}})
         return ret

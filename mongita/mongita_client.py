@@ -25,6 +25,8 @@ class MongitaClient(abc.ABC):
     def __getattr__(self, attr):
         if attr in self.UNIMPLEMENTED:
             raise MongitaNotImplementedError.create_client("MongitaClient", attr)
+        if attr == '_Database__create':
+            return self.__create
         return self[attr]
 
     def __getitem__(self, db_name):
@@ -37,7 +39,7 @@ class MongitaClient(abc.ABC):
             self._cache[db_name] = db
             return db
 
-    def _create(self, db_name):
+    def __create(self, db_name):
         """
         Mongodb does not create anything until first insert. So when we insert
         something, this will create a small metadata file to basically just store

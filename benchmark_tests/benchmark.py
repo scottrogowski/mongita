@@ -20,6 +20,7 @@ import msgpack
 import mongita
 import pymongo
 import lorem
+import plotly.graph_objects as go
 
 from tinymongo import TinyMongoClient
 from montydb import MontyClient
@@ -255,6 +256,7 @@ class Timer:
     def __init__(self, stats, name):
         self.stats = stats
         self.name = name
+        print(f"Running {name}...")
 
     def __enter__(self):
         self.start = time.perf_counter()
@@ -277,8 +279,6 @@ def bm():
     # test_write_append_docs(insert_docs)
     # test_write_sqlite_docs(insert_docs)
     clients = {
-        # TinyMongoClient,
-        # functools.partial(MontyClient, ":memory:"),
         'Mongita Memory': mongita.MongitaClientMemory,
         'Mongita Disk': functools.partial(mongita.MongitaClientDisk, '/tmp/mongita_benchmarks'),
         'Sqlite': SqliteWrapper,
@@ -287,6 +287,7 @@ def bm():
 
     all_stats = {}
     for cli_name, cli_cls in clients.items():
+        print("\nRunning loop for %s" % cli_name)
         stats = {}
         all_stats[cli_name] = stats
         cli = cli_cls()
@@ -342,8 +343,11 @@ def bm():
         if isinstance(cli, pymongo.MongoClient):
             assert os.system('brew services restart mongodb-community') == 0
         cli = cli_cls()
+        if cli.engine._cache:
+            print('\a'); import ipdb; ipdb.set_trace()
 
         with Timer(stats, "Retrieve all (cold)"):
+            print("cold retrieve")
             retrieved_docs = list(cli.bm.bm.find({}))
         assert len(retrieved_docs) == len(insert_docs)
 
@@ -379,7 +383,14 @@ def bm():
         print('=' * 20)
         for k, v in stats.items():
             print("%s: %.3f" % (k, v))
-    print(all_stats)
+
+    dat = []
+    for stat_name, stat_dict in all_stats.items():
+        dat.append(go.Bar(name=stat_name, x=list(stat_dict.keys()), y=list(stat_dict.values())))
+    fig = go.Figure(data=dat)
+    fig.update_layout(barmode='group')
+    fig.show()
+
 
 if __name__ == '__main__':
     bm()

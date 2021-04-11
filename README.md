@@ -64,6 +64,7 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
     mongita.MongitaClient.list_databases()
     mongita.MongitaClient.drop_database(name_or_database)
 
+
 **Database** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/database.html))
 
     mongita.Database.list_collection_names()

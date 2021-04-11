@@ -78,7 +78,7 @@ class DiskEngine(Engine):
         fh.at_end = False
         first_byte = fh.read(4)
         doc_len = int.from_bytes(first_byte, 'little', signed=True)
-        doc = bson.decode(first_byte + fh.read(doc_len - 4))  # TODO some bug here
+        doc = bson.decode(first_byte + fh.read(doc_len - 4))
         self._cache[itrn(collection)][itrn(doc_id)] = doc
         return doc
 
@@ -100,12 +100,14 @@ class DiskEngine(Engine):
                 # TODO, need to rewrite when document gets too sparse
                 fh.seek(pos)
                 fh.write(encoded_doc + b'\x00' * spare_bytes)
+                fh.flush()
                 return True
-        if not fh.at_end:
-            fh.seek(0, 2)
-            fh.at_end = True
+        # if not fh.at_end: # TODO
+        fh.seek(0, 2)
+        fh.at_end = True
         pos = fh.tell()
         fh.write(encoded_doc)
+        fh.flush()
         self._set_loc_idx(collection, doc_id, pos)
         return True
 
@@ -120,6 +122,7 @@ class DiskEngine(Engine):
         doc_len = int.from_bytes(first_byte, 'little', signed=True)
         fh.seek(pos)
         fh.write(b'\x00' * doc_len)
+        fh.flush()
         self._set_loc_idx(collection, doc_id, None)
         self._cache[collection].pop(doc_id, None)
         return True
@@ -168,10 +171,11 @@ class DiskEngine(Engine):
         metadata_path = self._get_full_path(collection, '$.metadata')
         with open(metadata_path, 'wb') as f:
             f.write(metadata.to_storage(as_bson=True))
+            f.flush()
         loc_idx_path = self._get_full_path(collection, '$.loc_idx')
         with open(loc_idx_path, 'wb') as f:
             f.write(bson.encode(self._loc_idx.get(collection, {})))
-
+            f.flush()
         return True
 
     def delete_dir(self, collection):

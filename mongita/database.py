@@ -25,6 +25,8 @@ class Database():
             raise MongitaNotImplementedError.create("Database", attr)
         if attr in self.DEPRECATED:
             raise MongitaNotImplementedError.create_depr("Database", attr)
+        if attr == '_Collection__create':
+            return self.__create
         return self[attr]
 
     def __getitem__(self, collection_name):
@@ -37,7 +39,7 @@ class Database():
             self._cache[collection_name] = coll
             return coll
 
-    def _create(self, coll_name):
+    def __create(self, coll_name):
         """
         Mongodb does not create anything until first insert. So when we insert
         something, this will create a small metadata file to basically just store
@@ -56,7 +58,7 @@ class Database():
             'uuid': str(bson.ObjectId()),
         })
         assert self._engine.put_metadata(self._base_location, metadata)
-        self.client._create(self.name)
+        self.client.__create(self.name)
 
     @support_alert
     def list_collection_names(self):

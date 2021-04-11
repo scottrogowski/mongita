@@ -1139,26 +1139,26 @@ def test_secure_disk():
     except:
         pass
     client = _MongitaClientDisk()
-    client['../evil']['./very'].insert_one({'boo': 'boo'})
-    assert '../evil../very' in client.engine._cache
-    assert list(client.list_database_names()) == ['../evil']
-    assert list(client['../evil'].list_collection_names()) == ['./very']
-    full_path = client.engine._get_full_path('../evil../very')
-    assert './' not in full_path
-    assert full_path.startswith(client.engine.base_storage_path)
-    assert '/' not in full_path[len(client.engine.base_storage_path) + 1:]
-
+    with pytest.raises(errors.InvalidName):
+        client['../evil']['./very'].insert_one({'boo': 'boo'})
     client.close()
 
     client['CON']['NUL'].insert_one({'boo': 'boo'})
     assert 'CON.NUL' in client.engine._cache
     full_path = client.engine._get_full_path('CON.NUL')
-    assert set(client.list_database_names()) == {'../evil', 'CON'}
+    assert set(client.list_database_names()) == {'CON'}
     assert list(client.CON.list_collection_names()) == ['NUL']
     full_path = client.engine._get_full_path('CON.NUL')
     assert not full_path.startswith('CON')
     assert not full_path[len(client.engine.base_storage_path) + 1:].startswith('CON')
 
+    # long name
+    with pytest.raises(errors.InvalidName):
+        client.db.longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglongl.insert_one({'boo': 'boo'})
+
+    # bad key. Cannot start with $
+    with pytest.raises(errors.InvalidName):
+        client.db.c.insert_one({'$boo': 'boo'})
 
 
 def test_close_disk():

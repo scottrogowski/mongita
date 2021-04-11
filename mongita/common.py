@@ -15,6 +15,7 @@ DESCENDING = -1
 _windows_device_files = ('CON', 'AUX', 'COM1', 'COM2', 'COM3', 'COM4', 'LPT1',
                          'LPT2', 'LPT3', 'PRN', 'NUL')
 _filename_ascii_strip_re = re.compile(r'[^A-Za-z0-9_.-]')
+_invalid_names = re.compile(r'[/\. "$*<>:|?]')
 
 
 def secure_filename(filename: str) -> str:
@@ -41,15 +42,16 @@ def secure_filename(filename: str) -> str:
 
 def ok_name(name):
     """
-    In-line with MongoDB restrictions, names are not be allowed to start with
-    '$' or 'system.'.
+    In-line with MongoDB restrictions.
+    https://docs.mongodb.com/manual/reference/limits/#std-label-restrictions-on-db-names
     https://docs.mongodb.com/manual/reference/limits/#Restriction-on-Collection-Names
+    The prohibition on "system." names will be covered by the prohibition on '.'
     """
     if not name:
         return False
-    if '$' in name:
+    if _invalid_names.search(name):
         return False
-    if name.startswith('system.'):
+    if len(name) > 64:
         return False
     return True
 
