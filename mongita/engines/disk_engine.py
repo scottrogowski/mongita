@@ -71,8 +71,7 @@ class DiskEngine(Engine):
         except KeyError:
             pass
 
-        pos = self._get_loc_idx(collection).get(str(doc_id))
-        assert pos is not None
+        pos = self._get_loc_idx(collection)[str(doc_id)]
         fh = self._get_coll_fh(collection)
         fh.seek(pos)
         fh.at_end = False
@@ -113,8 +112,7 @@ class DiskEngine(Engine):
 
     def delete_doc(self, collection, doc_id):
         doc_id = str(doc_id)
-        pos = self._get_loc_idx(collection).get(doc_id)
-        assert pos is not None
+        pos = self._get_loc_idx(collection)[doc_id]
         fh = self._get_coll_fh(collection)
         fh.seek(pos)
         fh.at_end = False

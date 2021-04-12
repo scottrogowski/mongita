@@ -551,6 +551,8 @@ def test_update_one(client_class):
     with pytest.raises(errors.PyMongoError):
         coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
 
+# TODO test update_many when we have missing values. So if we inc age but
+# one document doesn't have age
 
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_update_many(client_class):
@@ -1098,10 +1100,47 @@ def test_thread_safe_uo(client_class):
     assert coll.count_documents({}) == LEN_TEST_DOCS
     assert coll.count_documents({'weight': 8}) == LEN_TEST_DOCS
 
-    # TODO these for thread safety checks
 
-    # def update_many(filter, update):
-    #     client.db.snake_hunter.update_many(filter, update)
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_update_many(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    def um(tup):
+        filter, update = tup
+        print(filter, update)
+        coll.update_many(filter, update)
+
+    weights = coll.distinct('weight')
+    mid_weight = sorted(weights)[int(len(weights) / 2)]
+
+    um(({}, {'$set': {'age': 5}}))
+    assert coll.distinct('age') == [5]
+
+    tups = [
+        ({'weight': {'$lt': mid_weight}}, {'$inc': {'age': 2}}),
+        ({'weight': {'$gte': mid_weight}}, {'$inc': {'age': 5}}),
+        ({'weight': {'$lt': mid_weight}}, {'$inc': {'age': 5}}),
+        ({'weight': {'$gte': mid_weight}}, {'$inc': {'age': 2}}),
+        ({'weight': {'$gte': 0}}, {'$inc': {'age': 8}}),
+    ]
+    random.shuffle(tups)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(um, tups)
+
+    assert coll.distinct('age') == [20]
+
+    # test upsert (this seems like a pytest / concurrency bug)
+    # We are losing coverage in the "no upsert" line after running this
+    tups = [(), ()]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(lambda x: coll.update_many({}, {'$set': {'age': 30}}, upsert=True), tups)
+    assert coll.distinct('age') == [20]
+
+
+
+
+    # TODO these for thread safety checks
 
     # def replace_one(filter, replacement):
     #     client.db.snake_hunter.replace_one(filter, replacement)
