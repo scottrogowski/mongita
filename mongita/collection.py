@@ -510,9 +510,6 @@ class Collection():
         self._engine = database._engine
         self._existence_verified = False
         self._base_location = f'{database.name}.{collection_name}'
-        # self._metadata_location = Location(database=database.name,
-        #                                    collection=collection_name,
-        #                                    _id='$.metadata') # TODO
 
     def __repr__(self):
         return "Collection(%s, %r)" % (repr(self.database), self.name)

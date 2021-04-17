@@ -23,7 +23,7 @@ class Engine(abc.ABC):
         :rtype: dict
 
         Given a location, download a doc
-        If the doc doesn't exist, raise a MongitaError TODO I dn't hink this happens
+        If the doc doesn't exist, return None
         """
 
     @abc.abstractmethod
