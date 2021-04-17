@@ -135,9 +135,11 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
 
 Results from a side-by-side comparison on the same machine (MacBook Pro mid-2016)
 
-Mongita is slightly slower than MongoDb and SQLite in benchmarks. 
+![Inserts and access](assets/inserts_and_access.png)
+![Finds](assets/finds.png)
+![Updates and deletes](assets/updates_and_deletes.png)
+![Cold start](assets/from_cold_start_indexed.png)
 
-TODO 
 
 ### Contributing
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 import cProfile
-
 from datetime import datetime
 import functools
 import json
 import os
 import random
+import pstats
 import shutil
 import time
 
@@ -24,6 +24,13 @@ import plotly.graph_objects as go
 
 
 NOW_TS = int(datetime.now().timestamp())
+
+CLIENT_COLORS = {
+    'Mongita Memory': '#D8A753',
+    'Mongita Disk': '#82592C',
+    'Sqlite': '#0B3647',
+    'MongoDB+PyMongo': '#449B45',
+}
 
 
 def get_doc():
@@ -100,7 +107,6 @@ class SqliteCollectionWrapper():
         cur.executemany('INSERT INTO docs VALUES(?,?,?,?,?,?,?,?);', [_to_sqlite_row(d) for d in documents])
         self.con.commit()
         cur.execute("SELECT count() from docs")
-        print("sqlite count", cur.fetchone()[0])
 
     def find_one(self, filter):
         idd = filter['_id']
@@ -134,8 +140,16 @@ class SqliteCollectionWrapper():
             return True
         raise AssertionError(filter)
 
+    def delete_many(self, filter):
+        assert filter == {}
+        cur = self.con.cursor()
+        cur.execute("DELETE FROM docs where true=true;")
+        return True
+
     def create_index(self, index_name):
-        pass
+        cur = self.con.cursor()
+        cur.execute(f"CREATE INDEX {index_name}_idx ON docs({index_name})")
+        return True
 
 
 def test_write_open_file_bson(insert_docs):
@@ -204,15 +218,23 @@ def test_write_sqlite_docs(insert_docs):
 
 
 class Timer:
-    def __init__(self, stats, name):
+    def __init__(self, stats, name, profiler=False):
         self.stats = stats
         self.name = name
+        self.do_profiler = profiler
         print(f"Running {name}...")
 
     def __enter__(self):
+        if self.do_profiler:
+            self.profiler = cProfile.Profile()
+            self.profiler.enable()
         self.start = time.perf_counter()
 
     def __exit__(self, exc_type, exc_value, exc_tb):
+        if self.do_profiler:
+            self.profiler.disable()
+            stats = pstats.Stats(self.profiler).sort_stats('cumtime')
+            stats.print_stats()
         self.stats[self.name] = time.perf_counter() - self.start
 
 
@@ -237,6 +259,9 @@ def bm():
         'MongoDB+PyMongo': pymongo.MongoClient,
     }
 
+
+    assert os.getcwd().split('/')[-1] == 'mongita' and os.path.exists('assets')
+
     all_stats = {}
     for cli_name, cli_cls in clients.items():
         print("\nRunning loop for %s" % cli_name)
@@ -255,26 +280,26 @@ def bm():
             retrieved_docs = list(cli.bm.bm.find({}))
         assert len(retrieved_docs) == len(insert_docs)
 
-        with Timer(stats, "Access 1000 random elements"):
+        with Timer(stats, "Access 1000 random elements by id"):
             list(cli.bm.bm.find_one({'_id': _id})
                  for _id in random.sample(insert_doc_ids, 1000))
 
-        with Timer(stats, "Find categorically (~1/3 of documents)"):
+        with Timer(stats, "Find categorically (~3300 docs)"):
             list(cli.bm.bm.find({'city': 'Reno'}))
 
-        with Timer(stats, "Find by float comparison (~1/3 of documents)"):
+        with Timer(stats, "Find numerically (~3300 docs)"):
             list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
         cli.bm.bm.create_index('city')
         cli.bm.bm.create_index('percent')
 
-        with Timer(stats, "Find categorically (~1/3 of documents) (indexed)"):
+        with Timer(stats, "Find categorically (~3300 docs) (indexed)"):
             list(cli.bm.bm.find({'city': 'Reno'}))
 
-        with Timer(stats, "Find by float comparison (~1/3 of documents) (indexed)"):
+        with Timer(stats, "Find numerically (~3300 docs) (indexed)"):
             list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
-        with Timer(stats, "Update text content (~1/3 of documents twice) (indexed)"):
+        with Timer(stats, "Update text content (~3300 docs twice) (indexed)"):
             assert cli.bm.bm.update_many(
                 {'city': 'Reno'},
                 {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(1))}})
@@ -282,53 +307,37 @@ def bm():
                 {'city': 'Philly'},
                 {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(5))}})
 
-        # TODO delete_many seems really slow in unit tests
+        if not isinstance(cli, mongita.MongitaClientMemory):
 
-        if isinstance(cli, mongita.MongitaClientMemory):
-            print()
-            print(cli)
-            print('=' * 20)
-            for k, v in stats.items():
-                print("%s: %.3f" % (k, v))
-            continue
+            if isinstance(cli, pymongo.MongoClient):
+                assert os.system('brew services restart mongodb-community') == 0
+            cli = cli_cls()
 
-        if isinstance(cli, pymongo.MongoClient):
-            assert os.system('brew services restart mongodb-community') == 0
-        cli = cli_cls()
-        if cli.engine._cache:
-            print('\a'); import ipdb; ipdb.set_trace()
+            with Timer(stats, "Retrieve all ❄️"):
+                print("cold retrieve")
+                retrieved_docs = list(cli.bm.bm.find({}))
+            assert len(retrieved_docs) == len(insert_docs)
 
-        with Timer(stats, "Retrieve all (cold)"):
-            print("cold retrieve")
-            retrieved_docs = list(cli.bm.bm.find({}))
-        assert len(retrieved_docs) == len(insert_docs)
+            with Timer(stats, "Access 1000 random elements ❄️"):
+                list(cli.bm.bm.find_one({'_id': _id})
+                     for _id in random.sample(insert_doc_ids, 1000))
 
-        with Timer(stats, "Access 1000 random elements (cold)"):
-            list(cli.bm.bm.find_one({'_id': _id})
-                 for _id in random.sample(insert_doc_ids, 1000))
+            with Timer(stats, "Find categorically (~3300 docs) ❄️"):
+                list(cli.bm.bm.find({'city': 'Reno'}))
 
-        with Timer(stats, "Find categorically (~1/3 of documents) (cold)"):
-            list(cli.bm.bm.find({'city': 'Reno'}))
+            with Timer(stats, "Find numerically (~3300 docs) ❄️"):
+                list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
-        with Timer(stats, "Find by float comparison (~1/3 of documents) (cold)"):
-            list(cli.bm.bm.find({'percent': {'$lt': .33}}))
+            with Timer(stats, "Update text content (~3300 docs twice) ❄️"):
+                assert cli.bm.bm.update_many(
+                    {'city': 'Reno'},
+                    {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(1))}})
+                assert cli.bm.bm.update_many(
+                    {'city': 'Philly'},
+                    {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(5))}})
 
-        cli.bm.bm.create_index('city')
-        cli.bm.bm.create_index('percent')
-
-        with Timer(stats, "Find categorically (~1/3 of documents) (indexed) (cold)"):
-            list(cli.bm.bm.find({'city': 'Reno'}))
-
-        with Timer(stats, "Find by float comparison (~1/3 of documents) (indexed) (cold)"):
-            list(cli.bm.bm.find({'percent': {'$lt': .33}}))
-
-        with Timer(stats, "Update text content (~1/3 of documents twice) (indexed) (cold)"):
-            assert cli.bm.bm.update_many(
-                {'city': 'Reno'},
-                {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(1))}})
-            assert cli.bm.bm.update_many(
-                {'city': 'Philly'},
-                {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(5))}})
+        with Timer(stats, "Delete all"):
+            assert cli.bm.bm.delete_many({})
 
         print()
         print(cli)
@@ -336,12 +345,33 @@ def bm():
         for k, v in stats.items():
             print("%s: %.3f" % (k, v))
 
-    dat = []
-    for stat_name, stat_dict in all_stats.items():
-        dat.append(go.Bar(name=stat_name, x=list(stat_dict.keys()), y=list(stat_dict.values())))
-    fig = go.Figure(data=dat)
-    fig.update_layout(barmode='group')
-    fig.show()
+    all_keys = list(all_stats['Mongita Disk'].keys())
+    chart_types = {
+        'Inserts and access': all_keys[:3],
+        'Finds': all_keys[3:7],
+        'Updates and deletes': all_keys[7:8] + all_keys[13:],
+        'From cold start (indexed)': all_keys[8:13],
+    }
+
+    for chart_title, chart_keys in chart_types.items():
+        dat = []
+        for client_name, _stat_dict in all_stats.items():
+            stat_dict = {k: v for k, v in _stat_dict.items() if k in chart_keys}
+            dat.append(go.Bar(name=client_name,
+                              x=list(stat_dict.keys()),
+                              y=list(stat_dict.values()),
+                              text=[round(v, 3) for v in stat_dict.values()],
+                              textposition='outside',
+                              marker_color=CLIENT_COLORS[client_name]))
+        fig = go.Figure(data=dat)
+        fig.update_layout(
+            title_text=chart_title,
+            yaxis_title="Seconds",
+            barmode='group')
+        # fig.update_yaxes(range=[0, 1])
+        fig.show()
+        chart_title = chart_title.lower().replace(' ', '_').replace('(', '').replace(')', '')
+        fig.write_image(f"assets/{chart_title}.png")
 
 
 if __name__ == '__main__':

@@ -7,7 +7,8 @@ import sortedcontainers
 
 from .cursor import Cursor, _validate_sort
 from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
-from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError, InvalidName, OperationFailure
+from .errors import (MongitaError, MongitaNotImplementedError, DuplicateKeyError,
+                     InvalidName, OperationFailure)
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
 
 
@@ -68,7 +69,8 @@ def _validate_update(update):
             "update operators %r." % (_SUPPORTED_UPDATE_OPERATORS,))
     for update_dict in update.values():
         if not isinstance(update_dict, dict):
-            raise MongitaError("If present, the update operator must be a dict, not %r" % type(update_dict))
+            raise MongitaError("If present, the update operator must be a dict, "
+                               "not %r" % type(update_dict))
         _id = update_dict.get('_id')
         if _id:
             if not isinstance(_id, (str, bson.ObjectId)):
@@ -209,13 +211,16 @@ def _get_ids_from_idx(idx, query_ops):
     matched_keys = set()
     if isinstance(query_ops, dict):
         if _make_idx_key(query_ops) in idx.keys():
-            matched_keys = set([_make_idx_key(query_ops),])
+            matched_keys = {_make_idx_key(query_ops)}
         else:
             for query_op, query_val in sorted(query_ops.items(),
                                               key=_idx_filter_sort, reverse=True):
                 clean_idx_key = _make_idx_key(query_val)
                 if query_op == '$eq':
-                    matched_keys = set((clean_idx_key,)) if clean_idx_key in (matched_keys or idx.keys()) else set()
+                    if clean_idx_key in (matched_keys or idx.keys()):
+                        matched_keys = {clean_idx_key}
+                    else:
+                        matched_keys = set()
                 elif query_op == '$ne':
                     matched_keys = set(k for k in matched_keys or idx.keys() if k != clean_idx_key)
                 elif query_op == '$lt':
@@ -410,7 +415,7 @@ def _update_idx_doc_with_new_documents(documents, idx_doc):
     for doc in documents:
         key = _make_idx_key(_get_item_from_doc(doc, key_str))
         if key is not None:
-            new_idx.setdefault(key, []).append(doc['_id'])
+            new_idx.setdefault(key, set()).add(doc['_id'])
 
     reverse = idx_doc['direction'] == DESCENDING
     idx_doc['idx'] = sortedcontainers.SortedDict(sorted(new_idx.items(), reverse=reverse))
@@ -427,7 +432,11 @@ def _remove_docs_from_idx_doc(doc_ids, idx_doc):
 
     for k in idx_doc['idx'].keys():
         idx_doc['idx'][k] = [d for d in idx_doc['idx'][k] if d not in doc_ids]
-    return idx_doc
+    # TODO
+    # idx_doc_idx = idx_doc['idx']
+    # for idx_doc_ids in idx_doc_idx.values():
+    #     idx_doc_ids = set(idx_doc_ids) - doc_ids
+    # return idx_doc
 
 
 def _sort_docs(docs, sort_list):
@@ -489,8 +498,16 @@ def _apply_indx_ops(indx_ops):
 
 
 class Collection():
-    UNIMPLEMENTED = ['aggregate', 'aggregate_raw_batches', 'bulk_write', 'codec_options', 'create_indexes', 'drop', 'drop_indexes', 'ensure_index', 'estimated_document_count', 'find_one_and_delete', 'find_one_and_replace', 'find_one_and_update', 'find_raw_batches', 'inline_map_reduce', 'list_indexes', 'map_reduce', 'next', 'options', 'read_concern', 'read_preference', 'rename', 'watch', 'with_options', 'write_concern']
-    DEPRECATED = ['reindex', 'parallel_scan', 'initialize_unordered_bulk_op', 'initialize_ordered_bulk_op', 'group', 'count', 'insert', 'save', 'update', 'remove', 'find_and_modify', 'ensure_index']
+    UNIMPLEMENTED = ['aggregate', 'aggregate_raw_batches', 'bulk_write', 'codec_options',
+                     'create_indexes', 'drop', 'drop_indexes', 'ensure_index',
+                     'estimated_document_count', 'find_one_and_delete',
+                     'find_one_and_replace', 'find_one_and_update', 'find_raw_batches',
+                     'inline_map_reduce', 'list_indexes', 'map_reduce', 'next',
+                     'options', 'read_concern', 'read_preference', 'rename', 'watch',
+                     'with_options', 'write_concern']
+    DEPRECATED = ['reindex', 'parallel_scan', 'initialize_unordered_bulk_op',
+                  'initialize_ordered_bulk_op', 'group', 'count', 'insert', 'save',
+                  'update', 'remove', 'find_and_modify', 'ensure_index']
 
     def __init__(self, collection_name, database):
         self.name = collection_name
@@ -735,7 +752,7 @@ class Collection():
         if limit is None:
             for doc_id in doc_ids:
                 doc = self._engine.get_doc(self.full_name, doc_id)
-                if _doc_matches_slow_filters(doc, slow_filters):
+                if doc and _doc_matches_slow_filters(doc, slow_filters):
                     yield doc['_id']
             return
 
@@ -834,7 +851,8 @@ class Collection():
         _validate_update(update)
         self.__create()
         if upsert:
-            raise MongitaNotImplementedError("Mongita does not support 'upsert' on update operations. Use `replace_one`.")
+            raise MongitaNotImplementedError("Mongita does not support 'upsert' on "
+                                             "update operations. Use `replace_one`.")
 
         with self._engine.lock:
             doc_ids = list(self.__find_ids(filter))
@@ -861,7 +879,8 @@ class Collection():
         _validate_update(update)
         self.__create()
         if upsert:
-            raise MongitaNotImplementedError("Mongita does not support 'upsert' on update operations. Use `replace_one`.")
+            raise MongitaNotImplementedError("Mongita does not support 'upsert' "
+                                             "on update operations. Use `replace_one`.")
 
         success_docs = []
         matched_cnt = 0
@@ -892,7 +911,7 @@ class Collection():
                 return DeleteResult(0)
             metadata = self.__get_metadata()
             self._engine.delete_doc(self.full_name, doc_id)
-            self.__update_indicies_deletes([doc_id], metadata)
+            self.__update_indicies_deletes({doc_id}, metadata)
         return DeleteResult(1)
 
     @support_alert
@@ -906,13 +925,13 @@ class Collection():
         _validate_filter(filter)
         self.__create()
 
-        success_deletes = []
+        success_deletes = set()
         with self._engine.lock:
             doc_ids = list(self.__find_ids(filter))
             metadata = self.__get_metadata()
             for doc_id in doc_ids:
                 if self._engine.delete_doc(self.full_name, doc_id):
-                    success_deletes.append(doc_id)
+                    success_deletes.add(doc_id)
             self.__update_indicies_deletes(success_deletes, metadata)
         return DeleteResult(len(success_deletes))
 
@@ -962,7 +981,7 @@ class Collection():
         Given a list of deleted document ids, remove those documents from all indexes.
         Returns the new metadata dictionary.
 
-        :param doc_ids list[str]:
+        :param doc_ids set[str]:
         :param metadata dict:
         :rtype: dict
         """
@@ -1003,19 +1022,21 @@ class Collection():
         if isinstance(keys, str):
             keys = [(keys, ASCENDING)]
         if not isinstance(keys, list) or keys == []:
-            raise MongitaError("Unsupported keys parameter format %r. See the docs." % str(keys))
+            raise MongitaError("Unsupported keys parameter format %r. "
+                               "See the docs." % str(keys))
         if len(keys) > 1:
             raise MongitaNotImplementedError("Mongita does not support multi-key indexes yet")
         for k, direction in keys:
             if not k or not isinstance(k, str):
                 raise MongitaError("Index keys must be strings %r" % str(k))
             if direction not in (ASCENDING, DESCENDING):
-                raise MongitaError("Index key direction must be either ASCENDING (1) or DESCENDING (-1). Not %r" % direction)
+                raise MongitaError("Index key direction must be either ASCENDING (1) "
+                                   "or DESCENDING (-1). Not %r" % direction)
 
         key_str, direction = keys[0]
 
         idx_name = f'{key_str}_{direction}'
-        idx_doc = {
+        new_idx_doc = {
             '_id': idx_name,
             'key_str': key_str,
             'direction': direction,
@@ -1024,8 +1045,8 @@ class Collection():
 
         with self._engine.lock:
             metadata = self.__get_metadata()
-            _update_idx_doc_with_new_documents(self.__find({}, metadata=metadata), idx_doc)
-            metadata['indexes'][idx_name] = idx_doc
+            _update_idx_doc_with_new_documents(self.__find({}, metadata=metadata), new_idx_doc)
+            metadata['indexes'][idx_name] = new_idx_doc
             assert self._engine.put_metadata(self._base_location, metadata)
         return idx_name
 

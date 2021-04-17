@@ -89,12 +89,15 @@ class MetaStorageObject(dict):
         if as_bson:
             if 'indexes' in self:
                 swap = {}
-                for idx_key in self['indexes'].keys():
-                    swap[idx_key] = self['indexes'][idx_key]['idx']
-                    self['indexes'][idx_key]['idx'] = list(self['indexes'][idx_key]['idx'].items())
+                self_indexes = self['indexes']
+                for idx_key in self_indexes.keys():
+                    swap[idx_key] = self_indexes[idx_key]['idx']
+                    idx = map(lambda tup: (tup[0], list(tup[1])),
+                              self_indexes[idx_key]['idx'].items())
+                    self_indexes[idx_key]['idx'] = list(idx)
                 ret = bson.encode(self)
                 for idx_key, idx in swap.items():
-                    self['indexes'][idx_key]['idx'] = idx
+                    self_indexes[idx_key]['idx'] = idx
                 return ret
             return bson.encode(self)
         return self
@@ -113,6 +116,8 @@ class MetaStorageObject(dict):
         Changes the encoded indexes to SortedDicts
         """
         if 'indexes' in self:
-            for idx_key in list(self['indexes'].keys()):
-                self['indexes'][idx_key]['idx'] = sortedcontainers.SortedDict(self['indexes'][idx_key]['idx'])
-
+            self_indexes = self['indexes']
+            for idx_key in self_indexes.keys():
+                idx = map(lambda tup: (tup[0], set(tup[1])),
+                          self['indexes'][idx_key]['idx'])
+                self_indexes[idx_key]['idx'] = sortedcontainers.SortedDict(idx)

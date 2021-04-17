@@ -9,6 +9,8 @@ coverage>4.5,<4.6  # downgraded for --concurrency flag
 # Benchmarking
 plotly>=4.14,<5.0
 pygount>=1.2,<2.0
+psutil>=5.8,<6.0  # image chart generation
+requests>=2.25,<3.0  # also for image chart generation
 
 # Development
 ipdb>=0.13
