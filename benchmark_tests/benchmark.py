@@ -313,22 +313,22 @@ def bm():
                 assert os.system('brew services restart mongodb-community') == 0
             cli = cli_cls()
 
-            with Timer(stats, "Retrieve all ❄️"):
+            with Timer(stats, "Retrieve all "):
                 print("cold retrieve")
                 retrieved_docs = list(cli.bm.bm.find({}))
             assert len(retrieved_docs) == len(insert_docs)
 
-            with Timer(stats, "Access 1000 random elements ❄️"):
+            with Timer(stats, "Access 1000 random elements "):
                 list(cli.bm.bm.find_one({'_id': _id})
                      for _id in random.sample(insert_doc_ids, 1000))
 
-            with Timer(stats, "Find categorically (~3300 docs) ❄️"):
+            with Timer(stats, "Find categorically (~3300 docs) "):
                 list(cli.bm.bm.find({'city': 'Reno'}))
 
-            with Timer(stats, "Find numerically (~3300 docs) ❄️"):
+            with Timer(stats, "Find numerically (~3300 docs) "):
                 list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
-            with Timer(stats, "Update text content (~3300 docs twice) ❄️"):
+            with Timer(stats, "Update text content (~3300 docs twice) "):
                 assert cli.bm.bm.update_many(
                     {'city': 'Reno'},
                     {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(1))}})
@@ -347,10 +347,10 @@ def bm():
 
     all_keys = list(all_stats['Mongita Disk'].keys())
     chart_types = {
-        'Inserts and access': all_keys[:3],
-        'Finds': all_keys[3:7],
-        'Updates and deletes': all_keys[7:8] + all_keys[13:],
-        'From cold start (indexed)': all_keys[8:13],
+        'Performance comparison: inserts and access': all_keys[:3],
+        'Performance comparison: finds': all_keys[3:7],
+        'Performance comparison: updates and deletes': all_keys[7:8] + all_keys[13:],
+        'Performance comparison: cold starts': all_keys[8:13],
     }
 
     for chart_title, chart_keys in chart_types.items():
@@ -365,14 +365,15 @@ def bm():
                               marker_color=CLIENT_COLORS[client_name]))
         fig = go.Figure(data=dat)
         fig.update_layout(
+            template='plotly_white',
             title_text=chart_title,
             yaxis_title="Seconds",
             barmode='group',
-            font_family="Courier New"
+            # font_family="Garamond"
         )
         # fig.update_yaxes(range=[0, 1])
         fig.show()
-        chart_title = chart_title.lower().replace(' ', '_').replace('(', '').replace(')', '')
+        chart_title = chart_title.lower().replace(' ', '_').replace(':', '')
         fig.write_image(f"assets/{chart_title}.svg")
 
 

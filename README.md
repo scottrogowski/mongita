@@ -52,6 +52,13 @@ Mongita is in active development. Please report any bugs. Anticipate breaking ch
     >>> coll.delete_one({'name': 'Meercat'})
     DropResult()
 
+### Performance
+
+![Inserts and access](assets/performance_comparison_inserts_and_access.svg)
+![Finds](assets/performance_comparison_finds.svg)
+![Updates and deletes](assets/performance_comparison_updates_and_deletes.svg)
+![Cold start](assets/performance_comparison_cold_starts.svg)
+
 ### API
 
 Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.html) for detailed syntax and behavior. Most named keyword parameters are *not implemented*. When something is not implemented, efforts are made to be loud and obvious about it.
@@ -130,13 +137,6 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
 
     $set
     $inc
-
-### Performance
-
-![Inserts and access](assets/inserts_and_access.svg)
-![Finds](assets/finds.svg)
-![Updates and deletes](assets/updates_and_deletes.svg)
-![Cold start](assets/from_cold_start_indexed.svg)
 
 
 ### Contributing
