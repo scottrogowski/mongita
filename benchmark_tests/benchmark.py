@@ -276,11 +276,11 @@ def bm():
         with Timer(stats, "Insert 10k"):
             cli.bm.bm.insert_many(insert_docs)
 
-        with Timer(stats, "Retrieve all"):
+        with Timer(stats, "Retrieve all documents"):
             retrieved_docs = list(cli.bm.bm.find({}))
         assert len(retrieved_docs) == len(insert_docs)
 
-        with Timer(stats, "Access 1000 random elements by id"):
+        with Timer(stats, "Get 1000 docs by id"):
             list(cli.bm.bm.find_one({'_id': _id})
                  for _id in random.sample(insert_doc_ids, 1000))
 
@@ -313,12 +313,12 @@ def bm():
                 assert os.system('brew services restart mongodb-community') == 0
             cli = cli_cls()
 
-            with Timer(stats, "Retrieve all "):
+            with Timer(stats, "Retrieve all documents "):
                 print("cold retrieve")
                 retrieved_docs = list(cli.bm.bm.find({}))
             assert len(retrieved_docs) == len(insert_docs)
 
-            with Timer(stats, "Access 1000 random elements "):
+            with Timer(stats, "Get 1000 docs by id "):
                 list(cli.bm.bm.find_one({'_id': _id})
                      for _id in random.sample(insert_doc_ids, 1000))
 
@@ -336,7 +336,7 @@ def bm():
                     {'city': 'Philly'},
                     {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(5))}})
 
-        with Timer(stats, "Delete all"):
+        with Timer(stats, "Delete all documents"):
             assert cli.bm.bm.delete_many({})
 
         print()
@@ -360,16 +360,18 @@ def bm():
             dat.append(go.Bar(name=client_name,
                               x=list(stat_dict.keys()),
                               y=list(stat_dict.values()),
-                              text=[round(v, 3) for v in stat_dict.values()],
-                              textposition='outside',
+                              # text=[round(v, 3) for v in stat_dict.values()],
+                              # textposition='outside',
                               marker_color=CLIENT_COLORS[client_name]))
         fig = go.Figure(data=dat)
         fig.update_layout(
-            template='plotly_white',
+            template='seaborn',
             title_text=chart_title,
             yaxis_title="Seconds",
             barmode='group',
-            # font_family="Garamond"
+            paper_bgcolor='rgba(240,240,240,120)',
+            plot_bgcolor='rgba(240,240,240,120)',
+            font_family="Garamond"
         )
         # fig.update_yaxes(range=[0, 1])
         fig.show()
