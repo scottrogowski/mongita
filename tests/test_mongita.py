@@ -676,17 +676,17 @@ def test_nested(client_class):
     assert coll.count_documents({'attrs.adorable': True}) == 1
 
     assert coll.update_one({'attrs.species': 'Suricata suricatta'},
-                           {'$set': {'attrs.adorb_points': [1, 2, 3]}})
+                           {'$set': {'attrs.adorb_points': [1, 2, 3]}}).modified_count == 1
 
     assert coll.find_one({'attrs.adorb_points.0': 1})['attrs']['adorb_points'] == [1, 2, 3]
 
     assert coll.update_one({'attrs.species': 'Suricata suricatta'},
-                           {'$set': {'attrs.adorb_points.5': 10}})
+                           {'$set': {'attrs.adorb_points.5': 10}}).modified_count == 1
 
     assert coll.find_one({'attrs.adorb_points.0': 1})['attrs']['adorb_points'] == [1, 2, 3, None, None, 10]
 
     assert coll.update_one({'attrs.species': 'Suricata suricatta'},
-                           {'$set': {'attrs.adorb_points.6.is.so': 'cute'}})
+                           {'$set': {'attrs.adorb_points.6.is.so': 'cute'}}).modified_count == 1
 
     # setting a list the wrong ways
     with pytest.raises(errors.MongitaError):
@@ -712,13 +712,14 @@ def test_nested(client_class):
 
     coll.create_index('species')
     assert coll.count_documents({'attrs.species': 'Suricata suricatta'}) == 1
-    coll.update_one({'attrs.species': 'Suricata suricatta'},
-                    {'$set': {'attrs.adorb_points': [1, 2, 3],
-                              'attrs.dict': {'hello': ['w', 'orld']}}})
+    assert coll.update_one({'attrs.species': 'Suricata suricatta'},
+                           {'$set': {'attrs.adorb_points': [1, 2, 3],
+                                     'attrs.dict': {'hello': ['w', 'orld']}}}).modified_count == 1
     coll.create_index('attrs.adorb_points')
     coll.create_index('attrs.dict')
 
     assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert coll.count_documents({'attrs.adorb_points': {'$eq': [1, 2, 3]}}) == 1
     assert coll.count_documents({'attrs.adorb_points': [1, 2, 3]}) == 1
     assert coll.count_documents({'attrs.dict': {'hello': ['w', 'orld']}}) == 1
     assert coll.count_documents({'attrs.adorb_points': [1, 2]}) == 0
@@ -1018,8 +1019,64 @@ def test_indicies_filters(client_class):
     with pytest.raises(mongita.errors.PyMongoError):
         coll.count_documents({'kingdom': {'$nin': 'bird'}})
 
-# TODO with indicies: all of the different ways to insert, update, replace, delete documents
-# TODO create_index on thread_safe
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_indicies_flow(client_class):
+    remove_test_dir()
+    client = client_class()
+    coll = client.db.coll
+    coll.create_index("weight")
+    assert len(coll.index_information()) == 2
+
+    assert coll.count_documents({}) == 0
+    inserted_ids = coll.insert_many(TEST_DOCS).inserted_ids
+    assert len(inserted_ids) == LEN_TEST_DOCS
+
+    assert len(coll.index_information()) == 2
+
+    weight_lt_3 = len([d for d in TEST_DOCS if d['weight'] < 3])
+    assert coll.count_documents({'weight': {'$lt': 3}}) == weight_lt_3
+    ur = coll.update_many({'weight': {'$lt': 3}}, {'$set': {'weight': 5}})
+    assert ur.matched_count == weight_lt_3
+    assert ur.modified_count == weight_lt_3
+
+    print(list(coll.find({})))
+    print(list(coll.find({'weight': {'$lt': 3}})))
+
+    assert coll.count_documents({'weight': {'$lt': 3}}) == 0
+    assert coll.count_documents({'weight': {'$gte': 3}}) == LEN_TEST_DOCS
+
+    ro = coll.replace_one({'weight': {'$lt': 3}}, {})
+    assert ro.matched_count == 0
+    assert ro.modified_count == 0
+
+    ro = coll.replace_one({'_id': inserted_ids[0]}, {'weight': 1.5})
+    assert ro.matched_count == 1
+    assert ro.modified_count == 1
+
+    assert coll.count_documents({'weight': {'$lt': 3}}) == 1
+    assert coll.find_one({'_id': inserted_ids[0]})['weight'] == 1.5
+
+    for doc_id in inserted_ids:
+        ro = coll.replace_one({'_id': doc_id}, {'no_weight': 'here'})
+        assert ro.matched_count == 1
+        assert ro.modified_count == 1
+
+    assert coll.count_documents({'weight': {'$lt': 3}}) == 0
+    assert coll.count_documents({'weight': {'$gte': 3}}) == 0
+
+    for doc_id in inserted_ids:
+        ro = coll.replace_one({'_id': doc_id}, {'weight': 7})
+        assert ro.matched_count == 1
+        assert ro.modified_count == 1
+
+    assert coll.count_documents({'weight': {'$lt': 3}}) == 0
+    assert coll.count_documents({'weight': {'$gte': 3}}) == LEN_TEST_DOCS
+
+    dmr = coll.delete_many({'weight': 7})
+    assert dmr.deleted_count == LEN_TEST_DOCS
+    assert coll.count_documents({'weight': 7}) == 0
+    assert coll.count_documents({}) == 0
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1038,6 +1095,8 @@ def test_thread_safe_io(client_class):
         assert client.db.snake_hunter.find_one({'i': i})
     assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS * 8
     assert client.db.snake_hunter.count_documents({'name': 'Human'}) == 8
+
+# TODO create_index on thread_safe
 
 
 def flatten(list_of_lists):
@@ -1107,6 +1166,7 @@ def test_thread_safe_uo(client_class):
     assert coll.count_documents({'weight': 7}) == LEN_TEST_DOCS
     assert coll.count_documents({'weight': 8}) == 0
 
+    tups = []
     for doc in coll.find({}):
         tups.append(({'_id': doc['_id']}, {'$inc': {'weight': 1}}))
     random.shuffle(tups)

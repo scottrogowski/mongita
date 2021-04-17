@@ -405,6 +405,8 @@ def _update_idx_doc_with_new_documents(documents, idx_doc):
     :param idx_doc {key_str: str, direction: int idx: SortedDict, ...}:
     :rtype: None
     """
+    documents = list(documents)
+    _remove_docs_from_idx_doc(set(d['_id'] for d in documents), idx_doc)
 
     key_str = idx_doc['key_str']
     new_idx = sortedcontainers.SortedDict(idx_doc['idx'])
@@ -422,7 +424,7 @@ def _remove_docs_from_idx_doc(doc_ids, idx_doc):
     """
     Update an idx_doc given documents which were just removed
 
-    :param doc_ids list[str]:
+    :param doc_ids set[str]:
     :param idx_doc {key_str: str, direction: int idx: SortedDict, ...}:
     :rtype: None
     """
@@ -825,7 +827,7 @@ class Collection():
         doc = self._engine.get_doc(self.full_name, doc_id)
         for update_op, update_op_dict in update.items():
             _set_item_in_doc(update_op, update_op_dict, doc)
-        assert self._engine.put_doc(self.full_name, doc)  # TODO #, if_gen_match=True)
+        assert self._engine.put_doc(self.full_name, doc)
         return dict(doc)
 
     @support_alert
@@ -884,6 +886,8 @@ class Collection():
                 doc = self.__update_doc(doc_id, update)
                 success_docs.append(doc)
                 matched_cnt += 1
+            print("update indicies", success_docs)
+            print("metadata", metadata)
             self.__update_indicies(success_docs, metadata)
         return UpdateResult(matched_cnt, len(success_docs))
 
@@ -1035,6 +1039,7 @@ class Collection():
             'direction': direction,
             'idx': {},
         }
+        print("creating index", new_idx_doc)
 
         with self._engine.lock:
             metadata = self.__get_metadata()
