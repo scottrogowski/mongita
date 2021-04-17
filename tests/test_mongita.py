@@ -1102,12 +1102,11 @@ def test_thread_safe_uo(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
-def test_update_many(client_class):
+def test_thread_safe_update_many(client_class):
     client, coll, imr = setup_many(client_class)
 
     def um(tup):
         filter, update = tup
-        print(filter, update)
         coll.update_many(filter, update)
 
     weights = coll.distinct('weight')
@@ -1138,21 +1137,123 @@ def test_update_many(client_class):
     assert coll.distinct('age') == [20]
 
 
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_thread_safe_replace_one(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    def ro(tup):
+        filter, doc = tup
+        coll.replace_one(filter, doc)
+
+    assert coll.count_documents({'name': 'Meercat'})
+    ro(({'name': 'Meercat'}, {'hello': 'world', 'a': 'b'}))
+    assert coll.find_one({'hello': 'world'})['a'] == 'b'
+    assert not coll.count_documents({'name': 'Meercat'})
+
+    tups = [
+        ({'name': 'Secretarybird'}, {'bird': 'bird1'}),
+        ({'name': 'Secretarybird'}, {'bird': 'bird2'})
+    ]
+    random.shuffle(tups)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(ro, tups)
+    assert coll.count_documents({'bird': 'bird1'}) + \
+           coll.count_documents({'bird': 'bird2'}) == 1
+
+    ro(({}, {'goodbye': 'world', 'y': 'z'}))
+    assert coll.find_one({'goodbye': 'world'})['y'] == 'z'
+
+    # Test replacing two documents with no filter
+    # This might feel like we should have both bird3 and bird4 but actually
+    # Concurrency allows multiple replaces on the same document just fine
+    tups = [
+        ({}, {'bird': 'bird3'}),
+        ({}, {'bird': 'bird4'})
+    ]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(ro, tups)
+    assert coll.count_documents({'bird': 'bird3'}) + \
+           coll.count_documents({'bird': 'bird4'}) == 1
+
+    # Now this should definitely result in two different replaces. We are
+    # pulling two birds with weight <2 and changing their weight to > 2
+    client, coll, imr = setup_many(client_class)
+    tups = [
+        ({'weight': {'$lt': 3}}, {'weight': 4, 'bird': 'bird5'}),
+        ({'weight': {'$lt': 3}}, {'weight': 5, 'bird': 'bird6'}),
+    ]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(ro, tups)
+    assert coll.count_documents({'bird': 'bird5'}) + \
+           coll.count_documents({'bird': 'bird6'}) == 2
 
 
-    # TODO these for thread safety checks
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_thread_safe_replace_one_upsert(client_class):
+    client, coll, imr = setup_many(client_class)
 
-    # def replace_one(filter, replacement):
-    #     client.db.snake_hunter.replace_one(filter, replacement)
+    def ro(tup):
+        filter, doc = tup
+        coll.replace_one(filter, doc, upsert=True)
 
-    # def replace_one_upsert(filter, replacement):
-    #     client.db.snake_hunter.replace_one(filter, replacement, upsert=True)
+    # upsert should happen exactly once since one now exists
+    tups = [
+        ({'name': 'fake_bird'}, {'name': 'fake_bird', 'bird': 'bird1'}),
+        ({'name': 'fake_bird'}, {'name': 'fake_bird', 'bird': 'bird2'})
+    ]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(ro, tups)
+    assert coll.count_documents({'bird': 'bird1'}) + \
+           coll.count_documents({'bird': 'bird2'}) == 1
 
-    # def delete_one(filter):
-    #     client.db.snake_hunter.delete_one(filter)
+    assert coll.count_documents({}) == LEN_TEST_DOCS + 1
 
-    # def delete_many(filter):
-    #     client.db.snake_hunter.delete_many(filter)
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_thread_safe_delete_one(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    def do(f):
+        coll.delete_one(f)
+
+    filters = [{}, {}, {}]
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(do, filters)
+
+    assert coll.count_documents({}) == LEN_TEST_DOCS - 3
+
+    client, coll, imr = setup_many(client_class)
+    filters = [
+        {'name': 'Secretarybird'},
+        {'name': 'Secretarybird'},
+        {'name': 'Secretarybird'}]
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(do, filters)
+    assert coll.count_documents({}) == LEN_TEST_DOCS - 1
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_thread_safe_delete_many(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    def dm(f):
+        coll.delete_many(f)
+
+    filters = [{}, {}, {}]
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(dm, filters)
+
+    assert coll.count_documents({}) == 0
+
+    client, coll, imr = setup_many(client_class)
+    filters = [
+        {'weight': {'$lt': 3}},
+        {'weight': {'$lt': 3}},
+        {'weight': {'$lt': 3}}
+    ]
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(dm, filters)
+    assert coll.count_documents({}) == len([d for d in TEST_DOCS if d['weight'] >= 3])
 
 
 def test_close_memory():
@@ -1281,3 +1382,14 @@ def test_strict():
     client = MongitaClientMemory(strict=True)
     coll = client.db.snake_hunter
     assert len(coll.index_information()) == 1
+
+
+def test_flush():
+    # Addresses a bug when we don't flush fast enough
+    remove_test_dir()
+    client = _MongitaClientDisk()
+    client.db.coll.insert_many(TEST_DOCS * 1000)
+    client = _MongitaClientDisk()
+    assert client.db.coll.count_documents({}) == LEN_TEST_DOCS * 1000
+
+# TODO test accidentally opening two connections to the database. I think we should error

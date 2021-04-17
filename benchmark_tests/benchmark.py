@@ -22,23 +22,9 @@ import pymongo
 import lorem
 import plotly.graph_objects as go
 
-from tinymongo import TinyMongoClient
-from montydb import MontyClient
 
 NOW_TS = int(datetime.now().timestamp())
 
-# if isinstance(cli, mongita.MongitaClientDisk):
-#     pr = cProfile.Profile()
-#     pr.enable()
-
-# if isinstance(cli, mongita.MongitaClientDisk):
-#     pr.disable()
-#     import io, pstats
-#     s = io.StringIO()
-#     sortby = pstats.SortKey.CUMULATIVE
-#     ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-#     ps.print_stats()
-#     print(s.getvalue())
 
 def get_doc():
     return {
@@ -61,23 +47,11 @@ def get_docs(cnt):
     return [get_doc() for _ in range(cnt)]
 
 
-def to_sqlite_row(doc):
+def _to_sqlite_row(doc):
     doc['_id'] = str(doc['_id'])
     return (doc['_id'], doc['name'], doc['dt'], doc['count'], doc['city'],
             doc['content'], doc['percent'],
             json.dumps(doc['dict'], default=json_util.default))
-
-
-def insert_many(client, docs):
-    pass
-
-
-def update_many(client):
-    pass
-
-
-def find_many(client):
-    pass
 
 
 SQLITE_LOC = 'tmp.sqlite'
@@ -98,6 +72,7 @@ class SqliteWrapper():
             os.remove(SQLITE_LOC)
         except FileNotFoundError:
             pass
+
 
 class SqliteDatabaseWrapper():
     def __init__(self):
@@ -122,7 +97,7 @@ class SqliteCollectionWrapper():
 
     def insert_many(self, documents):
         cur = self.con.cursor()
-        cur.executemany('INSERT INTO docs VALUES(?,?,?,?,?,?,?,?);', [to_sqlite_row(d) for d in documents])
+        cur.executemany('INSERT INTO docs VALUES(?,?,?,?,?,?,?,?);', [_to_sqlite_row(d) for d in documents])
         self.con.commit()
         cur.execute("SELECT count() from docs")
         print("sqlite count", cur.fetchone()[0])
@@ -131,22 +106,6 @@ class SqliteCollectionWrapper():
         idd = filter['_id']
         self.cur.execute("SELECT * from docs WHERE idd=(?) LIMIT 1;", (idd,))
         return self.cur.fetchone()
-
-    # def find(self, filter):
-    #     cur = self.con.cursor()
-    #     if not filter:
-    #         cur.execute("SELECT doc FROM docs")
-    #         ret = [json.loads(r[0]) for r in cur.fetchall()]
-    #         return ret
-    #     if filter == {'city': 'Reno'}:
-    #         cur.execute("SELECT doc FROM docs where json_extract(doc, '$.city')='Reno'")
-    #         ret = [json.loads(r[0]) for r in cur.fetchall()]
-    #         return ret
-    #     if filter == {'percent': {'$lt': .33}}:
-    #         cur.execute("SELECT doc FROM docs where json_extract(doc, '$.percent')<.33")
-    #         ret = [json.loads(r[0]) for r in cur.fetchall()]
-    #         return ret
-    #     raise AssertionError(filter)
 
     def find(self, filter):
         cur = self.con.cursor()
@@ -179,23 +138,12 @@ class SqliteCollectionWrapper():
         pass
 
 
-def benchmark():
-    print("Generating 10,000 random docs (about 1KB each)...")
-    docs = get_docs(10000)
-    print("Got docs. Average bson length=%.3f" % sum(len(bson.encode(doc)) for doc in docs)/10000)
-
-    clients = [mongita.MongitaClientMemory, mongita.MongitaClientDisk, pymongo.MongoClient]
-    # for iteration in
-    for client_cls in clients:
-        client = client_cls()
-        client_name = repr(client)
-        print("Processing %s")
-
 def test_write_open_file_bson(insert_docs):
     with open('/tmp/10kdocs.bson', 'wb') as f:
         start_write_10k = time.perf_counter()
         f.write(bson.encode({'docs': insert_docs}))
     print("Wrote 10k docs in %.3f (bson)" % (time.perf_counter() - start_write_10k))
+
 
 def test_write_open_file_json(insert_docs):
     with open('/tmp/10kdocs.json', 'w') as f:
@@ -203,11 +151,13 @@ def test_write_open_file_json(insert_docs):
         f.write(json.dumps({'docs': insert_docs}))
     print("Wrote 10k docs in %.3f (json)" % (time.perf_counter() - start_write_10k))
 
+
 def test_write_open_file_msgpack(insert_docs):
     with open('docs.msgpack', 'wb') as f:
         start_write_10k = time.perf_counter()
         f.write(msgpack.dumps({'docs': insert_docs}))
     print("Wrote 10k docs in %.3f (msgpack)" % (time.perf_counter() - start_write_10k))
+
 
 def test_write_individual_docs(insert_docs):
     shutil.rmtree('/tmp/docs/')
@@ -217,6 +167,7 @@ def test_write_individual_docs(insert_docs):
         with open(f'/tmp/docs/{doc["name"]}.bson', 'wb') as f:
             f.write(bson.encode(doc))
     print("Wrote 10k docs individually in %.3f" % (time.perf_counter() - start_write_10k))
+
 
 def test_write_append_docs(insert_docs):
     try:
@@ -264,6 +215,7 @@ class Timer:
     def __exit__(self, exc_type, exc_value, exc_tb):
         self.stats[self.name] = time.perf_counter() - self.start
 
+
 def bm():
     print("Generating 10,000 random docs (about 1KB each)...")
     insert_docs = get_docs(10000)
@@ -295,7 +247,6 @@ def bm():
             cli.drop_database('bm')
         except:
             print("Could not drop database for %s" % cli)
-
 
         with Timer(stats, "Insert 10k"):
             cli.bm.bm.insert_many(insert_docs)
@@ -330,7 +281,6 @@ def bm():
             assert cli.bm.bm.update_many(
                 {'city': 'Philly'},
                 {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(5))}})
-
 
         if isinstance(cli, mongita.MongitaClientMemory):
             print()
@@ -394,4 +344,3 @@ def bm():
 
 if __name__ == '__main__':
     bm()
-

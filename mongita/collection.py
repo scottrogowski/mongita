@@ -626,18 +626,17 @@ class Collection():
 
         replacement = dict(replacement)
 
-        doc_id = self.__find_one_id(filter)
-        if not doc_id:
-            if upsert:
-                with self._engine.lock:
+        with self._engine.lock:
+            doc_id = self.__find_one_id(filter)
+            if not doc_id:
+                if upsert:
                     metadata = self.__get_metadata()
                     replacement['_id'] = replacement.get('_id') or bson.ObjectId()
                     self.__insert_one(replacement)
                     self.__update_indicies([replacement], metadata)
-                return UpdateResult(0, 1, replacement['_id'])
-            return UpdateResult(0, 0)
-        replacement['_id'] = doc_id
-        with self._engine.lock:
+                    return UpdateResult(0, 1, replacement['_id'])
+                return UpdateResult(0, 0)
+            replacement['_id'] = doc_id
             metadata = self.__get_metadata()
             assert self._engine.put_doc(self.full_name, replacement)
             self.__update_indicies([replacement], metadata)
@@ -834,11 +833,11 @@ class Collection():
         if upsert:
             raise MongitaNotImplementedError("Mongita does not support 'upsert' on update operations. Use `replace_one`.")
 
-        doc_ids = list(self.__find_ids(filter))
-        matched_count = len(doc_ids)
-        if not matched_count:
-            return UpdateResult(matched_count, 0)
         with self._engine.lock:
+            doc_ids = list(self.__find_ids(filter))
+            matched_count = len(doc_ids)
+            if not matched_count:
+                return UpdateResult(matched_count, 0)
             metadata = self.__get_metadata()
             doc = self.__update_doc(doc_ids[0], update)
             self.__update_indicies([doc], metadata)
@@ -863,8 +862,8 @@ class Collection():
 
         success_docs = []
         matched_cnt = 0
-        doc_ids = list(self.__find_ids(filter))
         with self._engine.lock:
+            doc_ids = list(self.__find_ids(filter))
             metadata = self.__get_metadata()
             for doc_id in doc_ids:
                 doc = self.__update_doc(doc_id, update)
@@ -884,11 +883,10 @@ class Collection():
         _validate_filter(filter)
         self.__create()
 
-        doc_id = self.__find_one_id(filter)
-        if not doc_id:
-            return DeleteResult(0)
-
         with self._engine.lock:
+            doc_id = self.__find_one_id(filter)
+            if not doc_id:
+                return DeleteResult(0)
             metadata = self.__get_metadata()
             self._engine.delete_doc(self.full_name, doc_id)
             self.__update_indicies_deletes([doc_id], metadata)
@@ -905,9 +903,9 @@ class Collection():
         _validate_filter(filter)
         self.__create()
 
-        doc_ids = list(self.__find_ids(filter))
         success_deletes = []
         with self._engine.lock:
+            doc_ids = list(self.__find_ids(filter))
             metadata = self.__get_metadata()
             for doc_id in doc_ids:
                 if self._engine.delete_doc(self.full_name, doc_id):

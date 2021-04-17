@@ -1,16 +1,14 @@
 # Mongita 
 
-THIS IS IN PROGRESS BUT IT IS CLOSE. DO NOT USE JUST YET.
-
 ![Mongita Baby Mongoose](assets/baby-mongita-mongoose.png)
 
 > "Mongita is to MongoDB as SQLite is to SQL"
 
 ![Version 0.0.1](https://img.shields.io/badge/version-0.0.1-red) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
 
-Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on disk or in-process memory.
+Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on disk or in memory.
 
-Mongita is *very much* a project. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
+Mongita is a project. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
 
 ### Applications
 - **Embedded database**: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
@@ -18,13 +16,14 @@ Mongita is *very much* a project. Please report any bugs. Anticipate breaking ch
  
 ### Design goals
 - **MongoDB compatibility**: Mongita implements a commonly-used subset of the PyMongo API. This allows projects to be started with Mongita and later upgraded to MongoDB once they reach an appropriate scale.
-- **Embedded/self-contained**: Mongita does not require a server or run a process. It is just a Python library. To use it, just add `import mongita` to the top of your script.
-- **Thread-safe**: Mongita avoids race conditions by isolating certain document modification operations.
-- **Limited dependencies**: Mongita runs anywhere that Python runs. Currently the only dependencies are PyMongo (for bson) and sortedcontainers (for fast indexes).
-- **Performance**: Mongita is only a little slower than MongoDB and Sqlite. See the performance section below.
+- **Embedded/self-contained**: Mongita does not require a server or start a process. It is just a Python library. To use it, just add `import mongita` to the top of your script.
+- **Speed**: Mongita is comparable-to or faster than both MongoDB and Sqlite in 10k document benchmarks. See the performance section below.
+- **Well tested**: Mongita has 100% test coverage and more test code than module code.
+- **Limited dependencies**: Mongita runs anywhere that Python runs. Currently the only dependencies are `pymongo` (for bson) and `sortedcontainers` (for faster indexes).
+- **Thread-safe**: (EXPERIMENTAL) Mongita avoids race conditions by isolating certain document modification operations.
 
 ### When NOT to use Mongita
-- **Your database has multiple clients**: Mongita is an embedded database. It is thread-safe but is not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
+- **Your database has multiple clients**: Mongita is an embedded database. It is probably thread-safe but is certainly not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
 - **You need extreme speed**: Mongita is fast enough in most cases. However, if database transactions are your bottleneck and you are dealing with hundreds every second, you might want to use a standard MongoDB server or SQLite.
 - **You run a lot of uncommon commands**: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
 
@@ -138,7 +137,7 @@ Results from a side-by-side comparison on the same machine (MacBook Pro mid-2016
 
 Mongita is slightly slower than MongoDb and SQLite in benchmarks. 
 
-TODO memory / local / pymongo+mongodb
+TODO 
 
 ### Contributing
 
@@ -148,6 +147,8 @@ Mongita is an *excellent* project for open source contributors. There is a lot t
 - [find_one_and_...](https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html#pymongo.collection.Collection.find_one_and_replace) methods.
 - [Aggregation pipelines](https://docs.mongodb.com/manual/reference/command/aggregate/).
 - More [cursor methods](https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html). Currently only sort, next, and limit are implemented.
+
+You are welcome to email me at scottmrogowski@gmail.com if you are interested.
 
 ### License
 
@@ -159,8 +160,9 @@ Mongita was started as a component of the [fastmap server](https://github.com/fa
 
 ### Similar projects
 
-As sometimes happens, I found these when I was nearing completion on the first
-version. However, in my tests with these, I found that they were missing some functionality I would consider important (e.g. indexes).
+Both of these are similar projects which appear to be missing some important functionality (e.g. indexes).
 
 - [TinyMongo](https://github.com/schapman1974/tinymongo)
 - [MontyDb](https://github.com/davidlatwe/montydb)
+
+Also worth a mention, the most popular nosql embedded database which does NOT attempt to embed MongoDB is [UnQLite](https://unqlite.org/).
