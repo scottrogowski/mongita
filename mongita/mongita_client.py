@@ -123,7 +123,7 @@ class MongitaClientDisk(MongitaClient):
     compatible in most ways with pymongo's MongoClient.
     """
     def __init__(self, bucket=DEFAULT_STORAGE_DIR):
-        self.engine = disk_engine.DiskEngine(bucket)
+        self.engine = disk_engine.DiskEngine.create(bucket)
         super().__init__()
 
     def __repr__(self):
@@ -138,9 +138,9 @@ class MongitaClientMemory(MongitaClient):
     pymongo's MongoClient.
     """
     def __init__(self, strict=False):
-        self.engine = memory_engine.MemoryEngine(strict)
+        self.engine = memory_engine.MemoryEngine.create(strict)
         super().__init__()
 
-    def __repr__(self):
-        pid = multiprocessing.current_process().pid
-        return "MongitaClientMemory(pid=%s)" % pid
+    # def __repr__(self):
+    #     pid = multiprocessing.current_process().pid
+    #     return "MongitaClientMemory(pid=%s)" % pid

@@ -16,6 +16,10 @@ class MemoryEngine(Engine):
         self._metadata = {}
         self.lock = threading.RLock()
 
+    @staticmethod
+    def create(strict=False):
+        return MemoryEngine(strict)
+
     def put_doc(self, collection, doc, no_overwrite=False):
         doc_id = str(doc['_id'])
         if no_overwrite and doc_id in self._cache[collection]:

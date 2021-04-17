@@ -282,6 +282,8 @@ def bm():
                 {'city': 'Philly'},
                 {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(5))}})
 
+        # TODO delete_many seems really slow in unit tests
+
         if isinstance(cli, mongita.MongitaClientMemory):
             print()
             print(cli)

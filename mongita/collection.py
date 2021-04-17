@@ -1,16 +1,23 @@
 import collections
+import copy
+import re
 
 import bson
 import sortedcontainers
 
 from .cursor import Cursor, _validate_sort
 from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
-from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError, InvalidName
+from .errors import MongitaError, MongitaNotImplementedError, DuplicateKeyError, InvalidName, OperationFailure
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
 
 
 _SUPPORTED_FILTER_OPERATORS = ('$in', '$eq', '$gt', '$gte', '$lt', '$lte', '$ne', '$nin')
 _SUPPORTED_UPDATE_OPERATORS = ('$set', '$inc')
+_DEFAULT_METADATA = {
+    'options': {},
+    'indexes': {},
+    '_id': str(bson.ObjectId()),
+}
 
 
 def _validate_filter(filter):
@@ -103,7 +110,13 @@ def _doc_matches_agg(doc_v, query_ops):
     """
     if any(k.startswith('$') for k in query_ops.keys()):
         for query_op, query_val in query_ops.items():
-            if query_op == '$in':
+            if query_op == '$eq':
+                if doc_v != query_val:
+                    return False
+            elif query_op == '$ne':
+                if doc_v == query_val:
+                    return False
+            elif query_op == '$in':
                 if not isinstance(query_val, (list, tuple, set)):
                     raise MongitaError("'$in' requires an iterable")
                 if doc_v not in query_val:
@@ -113,23 +126,17 @@ def _doc_matches_agg(doc_v, query_ops):
                     raise MongitaError("'$nin' requires an iterable")
                 if doc_v in query_val:
                     return False
-            elif query_op == '$eq':
-                if doc_v != query_val:
-                    return False
-            elif query_op == '$ne':
-                if doc_v == query_val:
-                    return False
             elif query_op == '$lt':
-                if doc_v >= query_val:
+                if doc_v is None or doc_v >= query_val:
                     return False
             elif query_op == '$lte':
-                if doc_v > query_val:
+                if doc_v is None or doc_v > query_val:
                     return False
             elif query_op == '$gt':
-                if doc_v <= query_val:
+                if doc_v is None or doc_v <= query_val:
                     return False
             elif query_op == '$gte':
-                if doc_v < query_val:
+                if doc_v is None or doc_v < query_val:
                     return False
             # agg_k check is in _validate_filter
         return True
@@ -530,11 +537,7 @@ class Collection():
         with self._engine.lock:
             if not self._engine.get_metadata(self._base_location):
                 self._engine.create_path(self._base_location)
-                metadata = MetaStorageObject({
-                    'options': {},
-                    'indexes': {},
-                    '_id': str(bson.ObjectId()),
-                })
+                metadata = MetaStorageObject(copy.deepcopy(_DEFAULT_METADATA))
                 assert self._engine.put_metadata(self._base_location, metadata)
             self.database.__create(self.name)
         self._existence_verified = True
@@ -952,7 +955,7 @@ class Collection():
 
         :rtype: dict
         """
-        return self._engine.get_metadata(self._base_location) or {}
+        return self._engine.get_metadata(self._base_location) or copy.deepcopy(_DEFAULT_METADATA)
 
     def __update_indicies_deletes(self, doc_ids, metadata):
         """
@@ -995,6 +998,7 @@ class Collection():
         :param keys str|[(key, direction)]:
         :rtype: str
         """
+        self.__create()
 
         if isinstance(keys, str):
             keys = [(keys, ASCENDING)]
@@ -1034,6 +1038,8 @@ class Collection():
         :param index_or_name str|(str, int)
         :rtype: None
         """
+        self.__create()
+
         if isinstance(index_or_name, (list, tuple)) \
            and len(index_or_name) == 1 \
            and len(index_or_name[0]) == 2 \
@@ -1042,14 +1048,16 @@ class Collection():
             index_or_name = f'{index_or_name[0][0]}_{index_or_name[0][1]}'
         if not isinstance(index_or_name, str):
             raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
-        try:
-            key, direction = index_or_name.split('_')
+        if re.match(r'^.*?_\-?1$', index_or_name):
+            key, direction = index_or_name.rsplit('_', 1)
             direction = int(direction)
-        except ValueError:
-            raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
+        else:
+            index_or_name = index_or_name + '_1'
 
         with self._engine.lock:
             metadata = self.__get_metadata()
+            if index_or_name not in metadata['indexes']:
+                raise OperationFailure('Index not found with name %r' % index_or_name)
             del metadata['indexes'][index_or_name]
             assert self._engine.put_metadata(self._base_location, metadata)
 

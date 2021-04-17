@@ -15,8 +15,9 @@ import mongita
 from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDING,
                      errors, results, cursor, collection, command_cursor, database,
                      engines)
-# from mongita.common import StorageObject
+random.seed(42)
 
+# TODO not present document values both with and without indicies
 
 TEST_DOCS = [
     {
@@ -25,6 +26,7 @@ TEST_DOCS = [
         'kingdom': 'mammal',
         'spotted': datetime(1994, 4, 23),
         'weight': 0.75,
+        'val': random.random(),
         'continents': ['AF'],
         'attrs': {
             'colors': ['brown'],
@@ -37,6 +39,7 @@ TEST_DOCS = [
         'kingdom': 'mammal',
         'spotted': datetime(2003, 12, 1),
         'weight': 1.4,
+        'val': random.random(),
         'continents': ['EA'],
         'attrs': {
             'colors': ['grey'],
@@ -49,6 +52,7 @@ TEST_DOCS = [
         'kingdom': 'mammal',
         'spotted': datetime(1987, 2, 13),
         'weight': 10.0,
+        'val': random.random(),
         'continents': ['EA', 'AF'],
         'attrs': {
             'colors': ['grey', 'black'],
@@ -61,6 +65,7 @@ TEST_DOCS = [
         'kingdom': 'reptile',
         'spotted': datetime(1997, 2, 22),
         'weight': 6.0,
+        'val': random.random(),
         'continents': ['EA'],
         'attrs': {
             'colors': ['black', 'grey'],
@@ -73,6 +78,7 @@ TEST_DOCS = [
         'kingdom': 'bird',
         'spotted': datetime(1992, 7, 3),
         'weight': 4.0,
+        'val': random.random(),
         'continents': ['AF'],
         'attrs': {
             'colors': ['white', 'black'],
@@ -85,6 +91,7 @@ TEST_DOCS = [
         'kingdom': 'mammal',
         'spotted': datetime(2021, 3, 25),
         'weight': 70.0,
+        'val': random.random(),
         'continents': ['NA', 'SA', 'EA', 'AF'],
         'attrs': {
             'colors': 'brown',
@@ -907,10 +914,17 @@ def test_list_dbs_collections(client_class):
     assert len(list(client.list_databases())) == expected_cnt
 
 
-
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_indicies_basic(client_class):
     client, coll, imr = setup_many(client_class)
+    print(repr(client))
+    print(client.engine._cache)
+    print("here")
+    cli = MongitaClientMemory()
+    print('cli', cli)
+    print('cli', cli.engine._cache)
+
+    print(coll.index_information())
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index('')
     with pytest.raises(mongita.errors.PyMongoError):
@@ -926,6 +940,7 @@ def test_indicies_basic(client_class):
 
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
+    print(coll.index_information())
     assert len(coll.index_information()) == 2
     coll.index_information()[1] == {'kingdom_1': {'key': [('kingdom', 1)]}}
     assert coll.count_documents({'kingdom': 'mammal'}) == \
@@ -965,6 +980,8 @@ def test_indicies_basic(client_class):
         coll.drop_index('kingdom1')
     with pytest.raises(mongita.errors.PyMongoError):
         coll.drop_index('kingdom__1')
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.drop_index('kingdom_a')
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1256,6 +1273,22 @@ def test_thread_safe_delete_many(client_class):
     assert coll.count_documents({}) == len([d for d in TEST_DOCS if d['weight'] >= 3])
 
 
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_immediate_index(client_class):
+    remove_test_dir()
+    client = client_class()
+    assert len(client.a.b.index_information()) == 1
+
+    client = client_class()
+    client.a.c.create_index("hello")
+    client.a.c.insert_one({'hello': 'world'})
+    assert client.a.c.count_documents({'hello': 'world'}) == 1
+
+    client = client_class()
+    with pytest.raises(errors.OperationFailure):
+        client.a.d.drop_index("hello")
+
+
 def test_close_memory():
     """ Close on memory should delete everything """
     client, coll, imr = setup_many(MongitaClientMemory)
@@ -1392,4 +1425,43 @@ def test_flush():
     client = _MongitaClientDisk()
     assert client.db.coll.count_documents({}) == LEN_TEST_DOCS * 1000
 
-# TODO test accidentally opening two connections to the database. I think we should error
+
+def test_defrag():
+    remove_test_dir()
+    client = _MongitaClientDisk()
+    client.db.coll.create_index('val')
+    client.db.coll.insert_many(TEST_DOCS * 100)
+    fh = client.engine._get_coll_fh('db.coll')
+    fh.seek(0, 2)
+    pos = fh.tell()
+    ur = client.db.coll.delete_many({'val': {'$lt': .25}})
+    fh.seek(0, 2)
+    assert fh.tell() == pos
+
+    client.close()
+    client = _MongitaClientDisk()
+    ur = client.db.coll.update_many({'val': {'$gt': .5}}, {'$set': {'attrs': {}, 'spotted': None}})
+    assert ur.modified_count == len([d for d in TEST_DOCS if d['val'] > .5]) * 100
+    fh = client.engine._get_coll_fh('db.coll')
+    fh.seek(0, 2)
+    assert fh.tell() < pos
+
+
+def test_two_connections_memory():
+    client1 = MongitaClientMemory()
+    client1.db.snake_hunter.insert_one({'hello': 'world'})
+    client2 = MongitaClientMemory()
+    assert client1.engine is not client2.engine
+    assert client2.db.snake_hunter.count_documents({}) == 0
+
+
+def test_two_connections_disk():
+    remove_test_dir()
+    client1 = _MongitaClientDisk()
+    client1.db.snake_hunter.insert_one({'hello': 'world'})
+    client2 = _MongitaClientDisk()
+    assert client1.engine is client2.engine
+    assert client2.db.snake_hunter.count_documents({}) == 1
+
+
+

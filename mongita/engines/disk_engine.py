@@ -11,6 +11,8 @@ import bson
 from ..common import MetaStorageObject, secure_filename
 from .engine_common import Engine
 
+DISK_ENGINE_INCUMBENTS = {}
+
 
 class DiskEngine(Engine):
     def __init__(self, base_storage_path):
@@ -20,8 +22,18 @@ class DiskEngine(Engine):
         self._cache = collections.defaultdict(dict)
         self._collection_fhs = {}
         self._metadata = {}
-        self._loc_idx = collections.defaultdict(dict)
+        self._file_attrs = collections.defaultdict(dict)
+        self.replaced = False
         self.lock = threading.RLock()
+
+    @staticmethod
+    def create(base_storage_path):
+        if base_storage_path in DISK_ENGINE_INCUMBENTS:
+            DISK_ENGINE_INCUMBENTS[base_storage_path].close()
+            return DISK_ENGINE_INCUMBENTS[base_storage_path]
+        de = DiskEngine(base_storage_path)
+        DISK_ENGINE_INCUMBENTS[base_storage_path] = de
+        return de
 
     def _get_full_path(self, collection, filename=''):
         return os.path.join(*list(filter(None, (self.base_storage_path,
@@ -35,32 +47,36 @@ class DiskEngine(Engine):
             pass
         data_path = self._get_full_path(collection, '$.data')
         if not os.path.exists(data_path):
+            # self.create_path(collection)
             pathlib.Path(data_path).touch()
         fh = open(data_path, 'rb+')
-        fh.at_end = False
         self._collection_fhs[itrn(collection)] = fh
         return fh
 
-    def _get_loc_idx(self, collection):
-        if collection in self._loc_idx:
-            return self._loc_idx[collection]
+    def _get_file_attrs(self, collection):
+        if collection in self._file_attrs:
+            return self._file_attrs[collection]['loc_idx']
 
-        loc_idx_path = self._get_full_path(collection, '$.loc_idx')
+        file_attrs_path = self._get_full_path(collection, '$.file_attrs')
         try:
-            with open(loc_idx_path, 'rb') as f:
-                self._loc_idx[itrn(collection)] = bson.decode(f.read())
+            with open(file_attrs_path, 'rb') as f:
+                self._file_attrs[itrn(collection)] = bson.decode(f.read())
         except FileNotFoundError:
-            self._loc_idx[itrn(collection)] = {}
-        return self._loc_idx[collection]
+            self._file_attrs[itrn(collection)] = {
+                'loc_idx': {},
+                'spare_bytes': 0,
+                'total_bytes': 0
+            }
+        return self._file_attrs[collection]['loc_idx']
 
-    def _set_loc_idx(self, collection, doc_id, pos):
+    def _set_file_attrs(self, collection, doc_id, pos):
         if pos is None:
-            self._loc_idx[itrn(collection)].pop(doc_id, None)
+            self._file_attrs[itrn(collection)]['loc_idx'].pop(doc_id, None)
         else:
-            self._loc_idx[itrn(collection)][itrn(doc_id)] = pos
+            self._file_attrs[itrn(collection)]['loc_idx'][itrn(doc_id)] = pos
 
     def doc_exists(self, collection, doc_id):
-        if str(doc_id) in self._get_loc_idx(collection):
+        if str(doc_id) in self._get_file_attrs(collection):
             return True
         return False
 
@@ -71,10 +87,9 @@ class DiskEngine(Engine):
         except KeyError:
             pass
 
-        pos = self._get_loc_idx(collection)[str(doc_id)]
+        pos = self._get_file_attrs(collection)[str(doc_id)]
         fh = self._get_coll_fh(collection)
         fh.seek(pos)
-        fh.at_end = False
         first_byte = fh.read(4)
         doc_len = int.from_bytes(first_byte, 'little', signed=True)
         doc = bson.decode(first_byte + fh.read(doc_len - 4))
@@ -89,39 +104,39 @@ class DiskEngine(Engine):
 
         encoded_doc = bson.encode(doc)
         fh = self._get_coll_fh(collection)
-        pos = self._get_loc_idx(collection).get(str(doc_id))
+        pos = self._get_file_attrs(collection).get(str(doc_id))
         if pos is not None:
             fh.seek(pos)
-            fh.at_end = False
             first_byte = fh.read(4)
             spare_bytes = int.from_bytes(first_byte, 'little', signed=True) - len(encoded_doc)
             if spare_bytes >= 0:
-                # TODO, need to rewrite when document gets too sparse
                 fh.seek(pos)
                 fh.write(encoded_doc + b'\x00' * spare_bytes)
                 fh.flush()
+                self._file_attrs[collection]['spare_bytes'] += spare_bytes
+                self._file_attrs[collection]['total_bytes'] -= spare_bytes
                 return True
-        # if not fh.at_end: # TODO
         fh.seek(0, 2)
-        fh.at_end = True
         pos = fh.tell()
         fh.write(encoded_doc)
         fh.flush()
-        self._set_loc_idx(collection, doc_id, pos)
+        self._set_file_attrs(collection, doc_id, pos)
+        self._file_attrs[collection]['total_bytes'] += len(encoded_doc)
         return True
 
     def delete_doc(self, collection, doc_id):
         doc_id = str(doc_id)
-        pos = self._get_loc_idx(collection)[doc_id]
+        pos = self._get_file_attrs(collection)[doc_id]
         fh = self._get_coll_fh(collection)
         fh.seek(pos)
-        fh.at_end = False
         first_byte = fh.read(4)
         doc_len = int.from_bytes(first_byte, 'little', signed=True)
         fh.seek(pos)
         fh.write(b'\x00' * doc_len)
         fh.flush()
-        self._set_loc_idx(collection, doc_id, None)
+        self._set_file_attrs(collection, doc_id, None)
+        self._file_attrs[collection]['total_bytes'] -= doc_len
+        self._file_attrs[collection]['spare_bytes'] += doc_len
         self._cache[collection].pop(doc_id, None)
         return True
 
@@ -159,10 +174,33 @@ class DiskEngine(Engine):
 
     #     metadata = {}
     #     for pos, doc in docs:
-    #         metadata['loc_idx'][doc['_id']] = pos
+    #         metadata['file_attrs'][doc['_id']] = pos
     #         self._cache[coll_path][doc['_id']] = doc
     #     self._metadata[coll_path] = metadata
     #     return metadata
+    def _defrag(self, collection):
+        fh = self._get_coll_fh(collection)
+        encoded_docs = {}
+        _cache_collection = self._cache[itrn(collection)]
+        for doc_id in self.list_ids(collection):
+            try:
+                doc = _cache_collection[itrn(doc_id)]
+                encoded_docs[doc_id] = bson.encode(doc)
+            except KeyError:
+                pos = self._get_file_attrs(collection)[str(doc_id)]
+                fh = self._get_coll_fh(collection)
+                fh.seek(pos)
+                first_byte = fh.read(4)
+                doc_len = int.from_bytes(first_byte, 'little', signed=True)
+                encoded_docs[doc_id] = first_byte + fh.read(doc_len - 4)
+
+        pos = 0
+        fh.seek(0)
+        for doc_id, encoded_doc in encoded_docs.items():
+            fh.write(encoded_doc)
+            self._set_file_attrs(collection, doc_id, pos)
+            pos += len(encoded_doc)
+        fh.truncate()
 
     def put_metadata(self, collection, metadata):
         self._metadata[itrn(collection)] = metadata
@@ -170,9 +208,14 @@ class DiskEngine(Engine):
         with open(metadata_path, 'wb') as f:
             f.write(metadata.to_storage(as_bson=True))
             f.flush()
-        loc_idx_path = self._get_full_path(collection, '$.loc_idx')
-        with open(loc_idx_path, 'wb') as f:
-            f.write(bson.encode(self._loc_idx.get(collection, {})))
+        file_attrs_path = self._get_full_path(collection, '$.file_attrs')
+        if self._file_attrs.get(collection, {}).get('spare_bytes', 0) / \
+           (1 + self._file_attrs.get(collection, {}).get('total_bytes', 0)) > 0.5:
+            self._defrag(collection)
+        with open(file_attrs_path, 'wb') as f:
+            f.write(bson.encode(self._file_attrs.get(collection, {'total_bytes': 0,
+                                                                  'spare_bytes': 0,
+                                                                  'loc_idx': {}})))
             f.flush()
         return True
 
@@ -183,11 +226,11 @@ class DiskEngine(Engine):
         shutil.rmtree(full_path)
         self._cache.pop(collection, None)
         self._metadata.pop(collection, None)
-        self._loc_idx.pop(collection, None)
+        self._file_attrs.pop(collection, None)
         return True
 
     def list_ids(self, collection, limit=None):
-        keys = self._get_loc_idx(collection).keys()
+        keys = self._get_file_attrs(collection).keys()
         if limit is None:
             return list(map(str, keys))
         return list(map(str, itertools.islice(keys, limit)))
@@ -200,7 +243,7 @@ class DiskEngine(Engine):
     def close(self):
         self._cache = collections.defaultdict(dict)
         self._metadata = {}
-        self._loc_idx = {}
+        self._file_attrs = {}
         for fh in self._collection_fhs.values():
             fh.close()
         self._collection_fhs = {}
