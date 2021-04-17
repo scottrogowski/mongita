@@ -18,14 +18,15 @@ Mongita is in active development. Please report any bugs. Anticipate breaking ch
 - **MongoDB compatibility**: Mongita implements a commonly-used subset of the PyMongo API. This allows projects to be started with Mongita and later upgraded to MongoDB once they reach an appropriate scale.
 - **Embedded/self-contained**: Mongita does not require a server or start a process. It is just a Python library. To use it, just add `import mongita` to the top of your script.
 - **Speed**: Mongita is comparable-to or faster than both MongoDB and Sqlite in 10k document benchmarks. See the performance section below.
-- **Well tested**: Mongita has 100% test coverage and more test code than module code.
+- **Well tested**: Mongita has 100% test coverage and more test code than library code.
 - **Limited dependencies**: Mongita runs anywhere that Python runs. Currently the only dependencies are `pymongo` (for bson) and `sortedcontainers` (for faster indexes).
 - **Thread-safe**: (EXPERIMENTAL) Mongita avoids race conditions by isolating certain document modification operations.
 
 ### When NOT to use Mongita
-- **Your database has multiple clients**: Mongita is an embedded database. It is probably thread-safe but is certainly not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
+- **Your database has multiple clients**: Mongita is an embedded database. It is not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
 - **You need extreme speed**: Mongita is fast enough in most cases. However, if database transactions are your bottleneck and you are dealing with hundreds every second, you might want to use a standard MongoDB server or SQLite.
 - **You run a lot of uncommon commands**: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
+- **You need something battle-tested**: Mongita has limited use in the real-world thus far.
 
 ### Installation
 
@@ -37,19 +38,18 @@ Mongita is in active development. Please report any bugs. Anticipate breaking ch
     >>> client = MongitaClientDisk()
     >>> hello_world_db = client.hello_world_db
     >>> mongoose_types = hello_world_db.mongoose_types
-    >>> mongoose_types.insert_many([{'name': 'Meercat', 'favorite_food', 'Snakes'})
+    >>> mongoose_types.insert_many([{'name': 'Meercat', 'not_into', 'Snakes'},
+                                    {'name': 'Yellow mongoose': 'eats': 'Termites'}])
     InsertResult()
-    >>> mongoose_types.count_documents()
+    >>> mongoose_types.count_documents({})
     2
-    >>> mongoose_types.update_one({'phrase_id': 1}, {'$set': {'hello': 'World!'}})
+    >>> mongoose_types.update_one({'name': 'Meercat'}, {'$set': {"weight": 2}})
     UpdateResult()
-    >>> mongoose_types.replace_one({'phrase_id': 1}, {'phrase_id': 1, 'HELLO': 'WORLD'}
-    ReplaceResult()
-    >>> mongoose_types.find({'phrase_id': {'$gt': 1})
+    >>> mongoose_types.find({'weight': {'$gt': 1})
     Cursor()
-    >>> list(coll.find({'phrase_id': {'$gt': 1}))
-    [{'_id': 'a1b2c3d4e5f6', 'phrase_id': 2, 'foo': 'bar'}]
-    >>> coll.delete_one({'phrase_id': 1})
+    >>> list(coll.find({'weight': {'$gt': 1}))
+    [{'_id': 'a1b2c3d4e5f6', 'weight': 2, 'name': 'Meercat'}]
+    >>> coll.delete_one({'name': 'Meercat'})
     DropResult()
 
 ### API

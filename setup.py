@@ -17,6 +17,8 @@ with open(os.path.join("mongita", "__init__.py")) as f:
 url_base = "https://github.com/mongita/mongita"
 download_url = '%s/archive/mongita-%s.tar.gz' % (url_base, version)
 
+# TODO publish pip
+
 setuptools.setup(
     name="mongita",
     version=version,
