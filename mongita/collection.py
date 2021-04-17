@@ -217,10 +217,7 @@ def _get_ids_from_idx(idx, query_ops):
                                               key=_idx_filter_sort, reverse=True):
                 clean_idx_key = _make_idx_key(query_val)
                 if query_op == '$eq':
-                    if clean_idx_key in (matched_keys or idx.keys()):
-                        matched_keys = {clean_idx_key}
-                    else:
-                        matched_keys = set()
+                    matched_keys = {clean_idx_key} if clean_idx_key in (matched_keys or idx.keys()) else set()
                 elif query_op == '$ne':
                     matched_keys = set(k for k in matched_keys or idx.keys() if k != clean_idx_key)
                 elif query_op == '$lt':
@@ -430,13 +427,9 @@ def _remove_docs_from_idx_doc(doc_ids, idx_doc):
     :rtype: None
     """
 
-    for k in idx_doc['idx'].keys():
-        idx_doc['idx'][k] = [d for d in idx_doc['idx'][k] if d not in doc_ids]
-    # TODO
-    # idx_doc_idx = idx_doc['idx']
-    # for idx_doc_ids in idx_doc_idx.values():
-    #     idx_doc_ids = set(idx_doc_ids) - doc_ids
-    # return idx_doc
+    idx_doc_idx = idx_doc['idx']
+    for k in idx_doc_idx.keys():
+        idx_doc_idx[k] -= doc_ids
 
 
 def _sort_docs(docs, sort_list):
