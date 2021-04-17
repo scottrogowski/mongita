@@ -97,7 +97,12 @@ TEST_DOCS = [
             'colors': 'brown',
             'species': 'Homo sapien'
         }
-    }
+    },
+    # {
+    #     'name': 'Placeholder',
+    #     'spotted': datetime(2021, 3, 25),
+    # }
+
 ]
 
 TEST_DIR = '/tmp/mongita_unittests'
@@ -918,14 +923,7 @@ def test_list_dbs_collections(client_class):
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_indicies_basic(client_class):
     client, coll, imr = setup_many(client_class)
-    print(repr(client))
-    print(client.engine._cache)
-    print("here")
-    cli = MongitaClientMemory()
-    print('cli', cli)
-    print('cli', cli.engine._cache)
 
-    print(coll.index_information())
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index('')
     with pytest.raises(mongita.errors.PyMongoError):
@@ -941,7 +939,6 @@ def test_indicies_basic(client_class):
 
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
-    print(coll.index_information())
     assert len(coll.index_information()) == 2
     coll.index_information()[1] == {'kingdom_1': {'key': [('kingdom', 1)]}}
     assert coll.count_documents({'kingdom': 'mammal'}) == \
@@ -1040,9 +1037,6 @@ def test_indicies_flow(client_class):
     assert ur.matched_count == weight_lt_3
     assert ur.modified_count == weight_lt_3
 
-    print(list(coll.find({})))
-    print(list(coll.find({'weight': {'$lt': 3}})))
-
     assert coll.count_documents({'weight': {'$lt': 3}}) == 0
     assert coll.count_documents({'weight': {'$gte': 3}}) == LEN_TEST_DOCS
 
@@ -1096,9 +1090,6 @@ def test_thread_safe_io(client_class):
     assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS * 8
     assert client.db.snake_hunter.count_documents({'name': 'Human'}) == 8
 
-# TODO create_index on thread_safe
-
-
 def flatten(list_of_lists):
     return [y for x in list_of_lists for y in x]
 
@@ -1131,6 +1122,7 @@ def test_thread_safe_im(client_class):
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_thread_safe_uo(client_class):
     client, coll, imr = setup_many(client_class)
+
     def update_one(tup):
         filter, replacement = tup
         coll.update_one(filter, replacement)
@@ -1331,6 +1323,73 @@ def test_thread_safe_delete_many(client_class):
     with ThreadPoolExecutor(max_workers=3) as executor:
         executor.map(dm, filters)
     assert coll.count_documents({}) == len([d for d in TEST_DOCS if d['weight'] >= 3])
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_thread_safe_index(client_class):
+    client = client_class()
+    coll = client.db.coll
+    coll.create_index('weight')
+    coll.create_index('kingdom')
+
+    def io(doc):
+        coll.insert_one(doc)
+
+    def um(tup):
+        filter, update = tup
+        coll.update_many(filter, update)
+
+    def ro(tup):
+        filter, doc = tup
+        coll.replace_one(filter, doc, upsert=True)
+
+    def do(f):
+        coll.delete_one(f)
+
+    lwg3 = len([d for d in TEST_DOCS if d['weight'] >= 3])
+    lmammal = len([d for d in TEST_DOCS if d['kingdom'] == 'mammal'])
+
+    test_docs = list(TEST_DOCS)
+    random.shuffle(test_docs)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(io, test_docs)
+
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert coll.count_documents({'weight': {'$gte': 3}}) == lwg3
+
+    tups = [
+        ({'weight': {'$gte': 3}}, {'$set': {'weight': 5}}),
+        ({'kingdom': 'mammal'}, {'$set': {'kingdom': 'fakemammal'}}),
+    ]
+    random.shuffle(tups)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(um, tups)
+
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert coll.count_documents({'weight': {'$gte': 3}}) == lwg3
+    assert coll.count_documents({'weight': 5}) == lwg3
+    assert coll.count_documents({'kingdom': 'mammal'}) == 0
+    assert coll.count_documents({'kingdom': 'fakemammal'}) == lmammal
+
+    tups = [
+        ({'kingdom': 'fakemammal', 'weight': {'$ne': 5}}, {'kingdom': 'fm1'}),
+        ({'weight': 5, 'kingdom': {'$ne': 'fakemammal'}}, {'weight': -1}),
+    ]
+    random.shuffle(tups)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(ro, tups)
+
+    assert coll.count_documents({}) == LEN_TEST_DOCS
+    assert coll.count_documents({'kingdom': 'fm1'}) == 1
+    assert coll.count_documents({'weight': 5}) == lwg3 - 1
+    assert coll.count_documents({'weight': -1}) == 1
+
+    tups = [{'weight': 5} for _ in range(lwg3 - 1)]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        executor.map(do, tups)
+    assert coll.count_documents({}) == LEN_TEST_DOCS - len(tups)
+    assert coll.count_documents({'weight': 5}) == 0
+    assert coll.count_documents({'weight': {'$ne': 5}}) == LEN_TEST_DOCS - lwg3
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)

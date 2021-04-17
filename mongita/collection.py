@@ -883,8 +883,6 @@ class Collection():
                 doc = self.__update_doc(doc_id, update)
                 success_docs.append(doc)
                 matched_cnt += 1
-            print("update indicies", success_docs)
-            print("metadata", metadata)
             self.__update_indicies(success_docs, metadata)
         return UpdateResult(matched_cnt, len(success_docs))
 
@@ -1036,7 +1034,6 @@ class Collection():
             'direction': direction,
             'idx': {},
         }
-        print("creating index", new_idx_doc)
 
         with self._engine.lock:
             metadata = self.__get_metadata()
