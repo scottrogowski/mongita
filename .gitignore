@@ -9,3 +9,6 @@ htmlcov
 *.pyc
 build/
 dist/
+tmp.sqlite
+benchmark_tests/*.prof
+benchmark_tests/*.svg

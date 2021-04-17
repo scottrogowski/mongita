@@ -63,7 +63,7 @@ Mongita is in active development. Please report any bugs. Anticipate breaking ch
 
 Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.html) for detailed syntax and behavior. Most named keyword parameters are *not implemented*. When something is not implemented, efforts are made to be loud and obvious about it.
 
-**mongita.MongitaClientMemory / mongita.MongitaClientDisk** (([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/mongo_client.html)))
+**mongita.MongitaClientMemory / mongita.MongitaClientDisk** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/mongo_client.html))
 
     mongita.MongitaClient.close()
     mongita.MongitaClient.list_database_names()

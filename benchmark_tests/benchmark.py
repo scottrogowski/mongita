@@ -299,7 +299,7 @@ def bm():
         with Timer(stats, "Find numerically (~3300 docs) (indexed)"):
             list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
-        with Timer(stats, "Update text content (~3300 docs twice) (indexed)"):
+        with Timer(stats, "Update text field (~3300 docs x2) (indexed)"):
             assert cli.bm.bm.update_many(
                 {'city': 'Reno'},
                 {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(1))}})
@@ -328,7 +328,7 @@ def bm():
             with Timer(stats, "Find numerically (~3300 docs) "):
                 list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
-            with Timer(stats, "Update text content (~3300 docs twice) "):
+            with Timer(stats, "Update text field (~3300 docs x2) "):
                 assert cli.bm.bm.update_many(
                     {'city': 'Reno'},
                     {'$set': {'content': ' '.join(lorem.paragraph() for _ in range(1))}})
