@@ -133,8 +133,6 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
 
 ### Performance
 
-Results from a side-by-side comparison on the same machine (MacBook Pro mid-2016)
-
 ![Inserts and access](assets/inserts_and_access.svg)
 ![Finds](assets/finds.svg)
 ![Updates and deletes](assets/updates_and_deletes.svg)

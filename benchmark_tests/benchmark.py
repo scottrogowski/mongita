@@ -367,7 +367,9 @@ def bm():
         fig.update_layout(
             title_text=chart_title,
             yaxis_title="Seconds",
-            barmode='group')
+            barmode='group',
+            font_family="Courier New"
+        )
         # fig.update_yaxes(range=[0, 1])
         fig.show()
         chart_title = chart_title.lower().replace(' ', '_').replace('(', '').replace(')', '')
