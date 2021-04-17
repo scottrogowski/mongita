@@ -371,7 +371,7 @@ def bm():
         # fig.update_yaxes(range=[0, 1])
         fig.show()
         chart_title = chart_title.lower().replace(' ', '_').replace('(', '').replace(')', '')
-        fig.write_image(f"assets/{chart_title}.png")
+        fig.write_image(f"assets/{chart_title}.svg")
 
 
 if __name__ == '__main__':
