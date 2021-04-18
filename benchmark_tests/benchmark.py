@@ -299,6 +299,8 @@ def bm():
         with Timer(stats, "Find numerically (~3300 docs) (indexed)"):
             list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
+        # TODO updating is the one thing that is embarassingly slow.
+        # need to find optimizations in it
         with Timer(stats, "Update text field (~3300 docs x2) (indexed)"):
             assert cli.bm.bm.update_many(
                 {'city': 'Reno'},
