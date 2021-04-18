@@ -118,6 +118,6 @@ class MetaStorageObject(dict):
         if 'indexes' in self:
             self_indexes = self['indexes']
             for idx_key in self_indexes.keys():
-                idx = map(lambda tup: (tup[0], set(tup[1])),
-                          self['indexes'][idx_key]['idx'])
+                idx = list(map(lambda tup: (tuple(tup[0]), set(tup[1])),
+                               self['indexes'][idx_key]['idx']))
                 self_indexes[idx_key]['idx'] = sortedcontainers.SortedDict(idx)

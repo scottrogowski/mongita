@@ -1,5 +1,6 @@
 from datetime import datetime, date
 import functools
+from numbers import Number
 import os
 import random
 import sys
@@ -16,8 +17,6 @@ from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDI
                      errors, results, cursor, collection, command_cursor, database,
                      engines)
 random.seed(42)
-
-# TODO not present document values both with and without indicies
 
 TEST_DOCS = [
     {
@@ -98,11 +97,16 @@ TEST_DOCS = [
             'species': 'Homo sapien'
         }
     },
-    # {
-    #     'name': 'Placeholder',
-    #     'spotted': datetime(2021, 3, 25),
-    # }
-
+    {
+        'name': 'Placeholder',
+        'spotted': datetime(2021, 3, 25),
+    },
+    {
+        'name': 'Placeholder2',
+        'spotted': datetime(2021, 3, 25),
+        'weight': 'catweight',
+        'kingdom': 'cat',
+    },
 ]
 
 TEST_DIR = '/tmp/mongita_unittests'
@@ -297,11 +301,13 @@ def test_find(client_class):
     doc_cursor = coll.find({'family': 'Herpestidae', 'weight': {'$lt': 20}})
     assert len(list(doc_cursor)) == 2
 
+    _sort_func = functools.partial(collection._sort_func, sort_key='weight')
+    sorted_weight = [d.get('weight') for d in sorted(TEST_DOCS, key=_sort_func)]
     finds = list(coll.find({}, sort='weight', limit=3))
-    assert [d['weight'] for d in finds] == sorted(d['weight'] for d in TEST_DOCS)[:3]
+    assert [d.get('weight') for d in finds] == sorted_weight[:3]
 
     finds = list(coll.find({}, sort=[('weight', DESCENDING)], limit=3))
-    assert [d['weight'] for d in finds] == sorted([d['weight'] for d in TEST_DOCS], reverse=True)[:3]
+    assert [d.get('weight') for d in finds] == list(reversed(sorted_weight))[:3]
 
     # string limit
     with pytest.raises(TypeError):
@@ -341,16 +347,22 @@ def test_cursor(client_class):
         list(coll.find().sort('weight', "ASCENDING"))
 
     sorted_docs = list(coll.find().sort('weight'))
-    assert sorted_docs[0]['name'] == 'Meercat'
-    assert sorted_docs[-1]['name'] == 'Human'
+    assert sorted_docs[0]['name'] == 'Placeholder'
+    assert sorted_docs[1]['name'] == 'Meercat'
+    assert sorted_docs[-2]['name'] == 'Human'
+    assert sorted_docs[-1]['name'] == 'Placeholder2'
 
     sorted_docs = list(coll.find().sort('weight', ASCENDING))
-    assert sorted_docs[0]['name'] == 'Meercat'
-    assert sorted_docs[-1]['name'] == 'Human'
+    assert sorted_docs[0]['name'] == 'Placeholder'
+    assert sorted_docs[1]['name'] == 'Meercat'
+    assert sorted_docs[-2]['name'] == 'Human'
+    assert sorted_docs[-1]['name'] == 'Placeholder2'
 
     sorted_docs = list(coll.find().sort('weight', DESCENDING))
-    assert sorted_docs[0]['name'] == 'Human'
-    assert sorted_docs[-1]['name'] == 'Meercat'
+    assert sorted_docs[0]['name'] == 'Placeholder2'
+    assert sorted_docs[1]['name'] == 'Human'
+    assert sorted_docs[-2]['name'] == 'Meercat'
+    assert sorted_docs[-1]['name'] == 'Placeholder'
 
     sorted_docs = list(coll.find().sort('name', DESCENDING))
     assert sorted_docs[0]['name'] == 'Secretarybird'
@@ -366,21 +378,24 @@ def test_cursor(client_class):
 
     sorted_docs = list(coll.find().sort([('kingdom', ASCENDING),
                                          ('weight', DESCENDING)]))
-    assert sorted_docs[0]['kingdom'] == 'bird'
-    assert sorted_docs[-1]['kingdom'] == 'reptile'
-    assert sorted_docs[1]['kingdom'] == 'mammal'
-    assert sorted_docs[1]['name'] == 'Human'
-    assert sorted_docs[-2]['kingdom'] == 'mammal'
+    assert sorted_docs[0].get('kingdom') == None
+    assert sorted_docs[1].get('kingdom') == 'bird'
+    assert sorted_docs[-1].get('kingdom') == 'reptile'
+    assert sorted_docs[2].get('kingdom') == 'cat'
+    assert sorted_docs[3].get('kingdom') == 'mammal'
+    assert sorted_docs[3]['name'] == 'Human'
+    assert sorted_docs[-2].get('kingdom') == 'mammal'
     assert sorted_docs[-2]['name'] == 'Meercat'
 
     sorted_docs = list(coll.find().sort([('kingdom', DESCENDING),
                                          ('weight', ASCENDING)]))
-    assert sorted_docs[0]['kingdom'] == 'reptile'
-    assert sorted_docs[-1]['kingdom'] == 'bird'
-    assert sorted_docs[1]['kingdom'] == 'mammal'
+    assert sorted_docs[0].get('kingdom') == 'reptile'
+    assert sorted_docs[-2].get('kingdom') == 'bird'
+    assert sorted_docs[-1].get('kingdom') == None
+    assert sorted_docs[1].get('kingdom') == 'mammal'
     assert sorted_docs[1]['name'] == 'Meercat'
-    assert sorted_docs[-2]['kingdom'] == 'mammal'
-    assert sorted_docs[-2]['name'] == 'Human'
+    assert sorted_docs[-4].get('kingdom') == 'mammal'
+    assert sorted_docs[-4]['name'] == 'Human'
 
     # next should would as expected
     doc_cursor = coll.find().sort('name')
@@ -477,18 +492,18 @@ def test_filters(client_class):
     assert coll.count_documents({'weight': {'$ne': 4}}) == LEN_TEST_DOCS - 1
 
     assert set(d['name'] for d in coll.find({'weight': {'$lt': 4}})) == \
-           set(d['name'] for d in TEST_DOCS if d['weight'] < 4)
+           set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') < 4)
     assert set(d['name'] for d in coll.find({'weight': {'$lte': 4}})) == \
-           set(d['name'] for d in TEST_DOCS if d['weight'] <= 4)
+           set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') <= 4)
     assert set(d['name'] for d in coll.find({'weight': {'$gt': 4}})) == \
-           set(d['name'] for d in TEST_DOCS if d['weight'] > 4)
+           set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') > 4)
     assert set(d['name'] for d in coll.find({'weight': {'$gte': 4}})) == \
-           set(d['name'] for d in TEST_DOCS if d['weight'] >= 4)
+           set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') >= 4)
 
     assert set(d['name'] for d in coll.find({'kingdom': {'$in': ['reptile', 'bird']}})) == \
-           set(d['name'] for d in TEST_DOCS if d['kingdom'] in ['reptile', 'bird'])
+           set(d['name'] for d in TEST_DOCS if d.get('kingdom') in ['reptile', 'bird'])
     assert set(d['name'] for d in coll.find({'kingdom': {'$nin': ['reptile', 'bird']}})) == \
-           set(d['name'] for d in TEST_DOCS if d['kingdom'] not in ['reptile', 'bird'])
+           set(d['name'] for d in TEST_DOCS if d.get('kingdom') not in ['reptile', 'bird'])
     with pytest.raises(errors.PyMongoError):
         list(coll.find({'kingdom': {'$in': 'bird'}}))
     with pytest.raises(errors.PyMongoError):
@@ -497,6 +512,7 @@ def test_filters(client_class):
         list(coll.find({'kingdom': {'$in': None}}))
     with pytest.raises(errors.PyMongoError):
         list(coll.find({'kingdom': {'$nin': 'bird'}}))
+
 
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_update_one(client_class):
@@ -533,7 +549,7 @@ def test_update_one(client_class):
     assert coll.find_one({'kingdom': 'bird'}) is None
     assert coll.count_documents({'kingdom': 'reptile'}) == 2
     pidgeotto2 = coll.find_one({'name': 'Pidgeotto'})
-    assert pidgeotto2['kingdom'] == 'reptile'
+    assert pidgeotto2.get('kingdom') == 'reptile'
     assert pidgeotto2['_id'] == pidgeotto['_id']
 
     tmp_doc_cnt = coll.count_documents({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}})
@@ -543,12 +559,12 @@ def test_update_one(client_class):
     assert coll.count_documents({'kingdom': 'reptile'}) == 3
 
     mongoose = coll.find_one({'name': 'Mongooose'})
-    mongoose_before_weight = mongoose['weight']
+    mongoose_before_weight = mongoose.get('weight')
     ur = coll.update_one({'name': 'Mongooose'}, {'$inc': {'weight': -1}})
     assert ur.matched_count == 1
     assert ur.modified_count == 1
     mongoose = coll.find_one({'name': 'Mongooose'})
-    assert mongoose['weight'] == mongoose_before_weight - 1
+    assert mongoose.get('weight') == mongoose_before_weight - 1
 
     ur = coll.update_one({'name': 'fake'}, {'$set': {'name': 'Mngse'}})
     assert ur.matched_count == 0
@@ -563,8 +579,6 @@ def test_update_one(client_class):
     with pytest.raises(errors.PyMongoError):
         coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
 
-# TODO test update_many when we have missing values. So if we inc age but
-# one document doesn't have age
 
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_update_many(client_class):
@@ -583,16 +597,16 @@ def test_update_many(client_class):
     assert set(d['name'] for d in coll.find({})) == {'Mongooose'}
     assert coll.count_documents({'name': 'Mongooose'}) == LEN_TEST_DOCS
 
-    ur = coll.update_many({'kingdom': {'$in': ['reptile', 'bird']}},
+    ur = coll.update_many({'kingdom': {'$in': ['reptile', 'bird', 'cat']}},
                           {'$set': {'kingdom': 'mammal'}})
-    assert ur.matched_count == 2
-    assert ur.modified_count == 2
+    assert ur.matched_count == 3
+    assert ur.modified_count == 3
     assert coll.distinct('kingdom') == ['mammal']
 
     ur = coll.update_many({'weight': {'$lt': 4}},
                           {'$inc': {'weight': 1}})
-    assert set(d['weight'] for d in coll.find({})) == \
-           set(d['weight'] + 1 if d['weight'] < 4 else d['weight'] for d in TEST_DOCS)
+    assert set(d.get('weight') for d in coll.find({})) == \
+           set(d['weight'] + 1 if isinstance(d.get('weight'), Number) and d.get('weight') < 4 else d.get('weight') for d in TEST_DOCS)
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -605,10 +619,10 @@ def test_distinct(client_class):
     assert set(dist) == set(d['name'] for d in TEST_DOCS)
 
     dist = coll.distinct('family')
-    assert set(dist) == set(d['family'] for d in TEST_DOCS)
+    assert set(dist) == set(filter(None, [d.get('family') for d in TEST_DOCS]))
 
     dist = coll.distinct('family', {'kingdom': 'mammal'})
-    assert set(dist) == set(d['family'] for d in TEST_DOCS if d['kingdom'] == 'mammal')
+    assert set(dist) == set(d['family'] for d in TEST_DOCS if d.get('kingdom') == 'mammal')
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -651,7 +665,7 @@ def test_delete_many(client_class):
     assert coll.count_documents({}) == LEN_TEST_DOCS - 1
 
     dor = coll.delete_many({'kingdom': 'mammal'})
-    num_mammals = sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
+    num_mammals = sum(1 for d in TEST_DOCS if d.get('kingdom') == 'mammal')
     assert dor.deleted_count == num_mammals - 1
     assert coll.count_documents({}) == LEN_TEST_DOCS - num_mammals
 
@@ -664,7 +678,7 @@ def test_delete_many(client_class):
 def test_nested(client_class):
     client, coll, imr = setup_many(client_class)
 
-    assert set(coll.distinct('attrs.species')) == set([d['attrs']['species'] for d in TEST_DOCS])
+    assert set(coll.distinct('attrs.species')) == set([d['attrs']['species'] for d in TEST_DOCS if 'attrs' in d])
 
     assert not coll.find_one({'attrs.species': 'fake'})
     assert coll.find_one({'attrs.species': 'Suricata suricatta'})
@@ -942,26 +956,26 @@ def test_indicies_basic(client_class):
     assert len(coll.index_information()) == 2
     coll.index_information()[1] == {'kingdom_1': {'key': [('kingdom', 1)]}}
     assert coll.count_documents({'kingdom': 'mammal'}) == \
-        sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
+        sum(1 for d in TEST_DOCS if d.get('kingdom') == 'mammal')
     assert coll.count_documents({'kingdom': 'reptile'}) == \
-        sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile')
+        sum(1 for d in TEST_DOCS if d.get('kingdom') == 'reptile')
     assert coll.count_documents({'kingdom': 'fish'}) == 0
     coll.drop_index(idx_name)
 
     idx_name = coll.create_index([('kingdom', -1)])
     assert idx_name == 'kingdom_-1'
     assert coll.count_documents({'kingdom': 'mammal'}) == \
-        sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal')
+        sum(1 for d in TEST_DOCS if d.get('kingdom') == 'mammal')
     assert coll.count_documents({'kingdom': 'reptile'}) == \
-        sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile')
+        sum(1 for d in TEST_DOCS if d.get('kingdom') == 'reptile')
     assert coll.count_documents({'kingdom': 'fish'}) == 0
 
     assert coll.insert_one(TEST_DOCS[0]).inserted_id
     assert coll.count_documents({'kingdom': 'mammal'}) == \
-        sum(1 for d in TEST_DOCS if d['kingdom'] == 'mammal') + 1
+        sum(1 for d in TEST_DOCS if d.get('kingdom') == 'mammal') + 1
     assert coll.delete_one({'kingdom': 'reptile'}).deleted_count == 1
     assert coll.count_documents({'kingdom': 'reptile'}) == \
-        sum(1 for d in TEST_DOCS if d['kingdom'] == 'reptile') - 1
+        sum(1 for d in TEST_DOCS if d.get('kingdom') == 'reptile') - 1
 
     coll.drop_index(idx_name)
 
@@ -989,22 +1003,23 @@ def test_indicies_filters(client_class):
     coll.create_index('weight')
     coll.create_index('kingdom')
     assert coll.count_documents({'weight': {'$eq': 6}}) == \
-        sum(1 for d in TEST_DOCS if d['weight'] == 6)
+        sum(1 for d in TEST_DOCS if d.get('weight') == 6)
     assert coll.count_documents({'weight': {'$ne': 6}}) == \
-        sum(1 for d in TEST_DOCS if d['weight'] != 6)
+        sum(1 for d in TEST_DOCS if d.get('weight') != 6)
     assert coll.count_documents({'weight': {'$lt': 6}}) == \
-        sum(1 for d in TEST_DOCS if d['weight'] < 6)
+        sum(1 for d in TEST_DOCS if isinstance(d.get('weight'), Number) and d.get('weight') < 6)
     assert coll.count_documents({'weight': {'$lte': 6}}) == \
-        sum(1 for d in TEST_DOCS if d['weight'] <= 6)
+        sum(1 for d in TEST_DOCS if isinstance(d.get('weight'), Number) and d.get('weight') <= 6)
     assert coll.count_documents({'weight': {'$gt': 6}}) == \
-        sum(1 for d in TEST_DOCS if d['weight'] > 6)
+        sum(1 for d in TEST_DOCS if isinstance(d.get('weight'), Number) and d.get('weight') > 6)
     assert coll.count_documents({'weight': {'$gte': 6}}) == \
-        sum(1 for d in TEST_DOCS if d['weight'] >= 6)
+        sum(1 for d in TEST_DOCS if isinstance(d.get('weight'), Number) and d.get('weight') >= 6)
+    assert coll.count_documents({'weight': {'$gte': 6}, 'kingdom': 'bird'}) == 0
 
     assert coll.count_documents({'kingdom': {'$in': ['bird', 'reptile']}}) == \
-        sum(1 for d in TEST_DOCS if d['kingdom'] in ['bird', 'reptile'])
+        sum(1 for d in TEST_DOCS if d.get('kingdom') in ['bird', 'reptile'])
     assert coll.count_documents({'kingdom': {'$nin': ['bird', 'reptile']}}) == \
-        sum(1 for d in TEST_DOCS if d['kingdom'] not in ['bird', 'reptile'])
+        sum(1 for d in TEST_DOCS if d.get('kingdom') not in ['bird', 'reptile'])
 
     assert coll.count_documents({'weight': {'$gt': 6, '$eq': .75}}) == 0
 
@@ -1031,14 +1046,14 @@ def test_indicies_flow(client_class):
 
     assert len(coll.index_information()) == 2
 
-    weight_lt_3 = len([d for d in TEST_DOCS if d['weight'] < 3])
+    weight_lt_3 = len([d for d in TEST_DOCS if isinstance(d.get('weight'), Number) and d.get('weight') < 3])
     assert coll.count_documents({'weight': {'$lt': 3}}) == weight_lt_3
     ur = coll.update_many({'weight': {'$lt': 3}}, {'$set': {'weight': 5}})
     assert ur.matched_count == weight_lt_3
     assert ur.modified_count == weight_lt_3
 
     assert coll.count_documents({'weight': {'$lt': 3}}) == 0
-    assert coll.count_documents({'weight': {'$gte': 3}}) == LEN_TEST_DOCS
+    assert coll.count_documents({'weight': {'$gte': 3}}) == LEN_TEST_DOCS - 2
 
     ro = coll.replace_one({'weight': {'$lt': 3}}, {})
     assert ro.matched_count == 0
@@ -1049,7 +1064,7 @@ def test_indicies_flow(client_class):
     assert ro.modified_count == 1
 
     assert coll.count_documents({'weight': {'$lt': 3}}) == 1
-    assert coll.find_one({'_id': inserted_ids[0]})['weight'] == 1.5
+    assert coll.find_one({'_id': inserted_ids[0]}).get('weight') == 1.5
 
     for doc_id in inserted_ids:
         ro = coll.replace_one({'_id': doc_id}, {'no_weight': 'here'})
@@ -1179,6 +1194,8 @@ def test_thread_safe_update_many(client_class):
         coll.update_many(filter, update)
 
     weights = coll.distinct('weight')
+    assert set(weights) == set(filter(None, [d.get('weight') for d in TEST_DOCS]))
+    weights = [w for w in weights if isinstance(w, Number)]
     mid_weight = sorted(weights)[int(len(weights) / 2)]
 
     um(({}, {'$set': {'age': 5}}))
@@ -1190,20 +1207,23 @@ def test_thread_safe_update_many(client_class):
         ({'weight': {'$lt': mid_weight}}, {'$inc': {'age': 5}}),
         ({'weight': {'$gte': mid_weight}}, {'$inc': {'age': 2}}),
         ({'weight': {'$gte': 0}}, {'$inc': {'age': 8}}),
+        ({'weight': {'$eq': 'catweight'}}, {'$set': {'age': 20}}),
+        ({'name': 'Placeholder'}, {'$set': {'age': -1}}),
     ]
     random.shuffle(tups)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         executor.map(um, tups)
 
-    assert coll.distinct('age') == [20]
+    assert set(coll.distinct('age')) == {20, -1}
 
-    # test upsert (this seems like a pytest / concurrency bug)
+    # Upsert should trigger an error because we don't support it because it's dumb
+    # (we test this elsewhere but this seems like a pytest / concurrency bug)
     # We are losing coverage in the "no upsert" line after running this
     tups = [(), ()]
     with ThreadPoolExecutor(max_workers=2) as executor:
         executor.map(lambda x: coll.update_many({}, {'$set': {'age': 30}}, upsert=True), tups)
-    assert coll.distinct('age') == [20]
+    assert set(coll.distinct('age')) == {20, -1}
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1322,7 +1342,7 @@ def test_thread_safe_delete_many(client_class):
     ]
     with ThreadPoolExecutor(max_workers=3) as executor:
         executor.map(dm, filters)
-    assert coll.count_documents({}) == len([d for d in TEST_DOCS if d['weight'] >= 3])
+    assert coll.count_documents({}) == len([d for d in TEST_DOCS if not isinstance(d.get('weight'), Number) or d.get('weight') >= 3])
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1346,8 +1366,8 @@ def test_thread_safe_index(client_class):
     def do(f):
         coll.delete_one(f)
 
-    lwg3 = len([d for d in TEST_DOCS if d['weight'] >= 3])
-    lmammal = len([d for d in TEST_DOCS if d['kingdom'] == 'mammal'])
+    lwg3 = len([d for d in TEST_DOCS if isinstance(d.get('weight'), Number) and d.get('weight') >= 3])
+    lmammal = len([d for d in TEST_DOCS if d.get('kingdom') == 'mammal'])
 
     test_docs = list(TEST_DOCS)
     random.shuffle(test_docs)
@@ -1389,7 +1409,7 @@ def test_thread_safe_index(client_class):
         executor.map(do, tups)
     assert coll.count_documents({}) == LEN_TEST_DOCS - len(tups)
     assert coll.count_documents({'weight': 5}) == 0
-    assert coll.count_documents({'weight': {'$ne': 5}}) == LEN_TEST_DOCS - lwg3
+    assert coll.count_documents({'weight': {'$ne': 5}}) == LEN_TEST_DOCS - lwg3 + 1
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1560,7 +1580,7 @@ def test_defrag():
     client.close()
     client = _MongitaClientDisk()
     ur = client.db.coll.update_many({'val': {'$gt': .5}}, {'$set': {'attrs': {}, 'spotted': None}})
-    assert ur.modified_count == len([d for d in TEST_DOCS if d['val'] > .5]) * 100
+    assert ur.modified_count == len([d for d in TEST_DOCS if d.get('val') and d['val'] > .5]) * 100
     fh = client.engine._get_coll_fh('db.coll')
     fh.seek(0, 2)
     assert fh.tell() < pos

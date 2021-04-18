@@ -1,5 +1,7 @@
 import collections
 import copy
+import datetime
+import functools
 import re
 
 import bson
@@ -18,6 +20,21 @@ _DEFAULT_METADATA = {
     'options': {},
     'indexes': {},
     '_id': str(bson.ObjectId()),
+}
+
+
+# FROM docs.mongodb.com/manual/reference/bson-type-comparison-order/#comparison-sort-order
+SORT_ORDER = {
+    int: b'\x02',
+    float: b'\x02',
+    str: b'\x03',
+    object: b'\x04',
+    list: b'\x05',
+    bytes: b'\x06',
+    bson.ObjectId: b'\x07',
+    bool: b'\x08',
+    datetime.datetime: b'\t',
+    re.Pattern: b'\n',
 }
 
 
@@ -129,16 +146,28 @@ def _doc_matches_agg(doc_v, query_ops):
                 if doc_v in query_val:
                     return False
             elif query_op == '$lt':
-                if doc_v is None or doc_v >= query_val:
+                try:
+                    if doc_v >= query_val:
+                        return False
+                except TypeError:
                     return False
             elif query_op == '$lte':
-                if doc_v is None or doc_v > query_val:
+                try:
+                    if doc_v > query_val:
+                        return False
+                except TypeError:
                     return False
             elif query_op == '$gt':
-                if doc_v is None or doc_v <= query_val:
+                try:
+                    if doc_v <= query_val:
+                        return False
+                except TypeError:
                     return False
             elif query_op == '$gte':
-                if doc_v is None or doc_v < query_val:
+                try:
+                    if doc_v < query_val:
+                        return False
+                except TypeError:
                     return False
             # agg_k check is in _validate_filter
         return True
@@ -180,9 +209,17 @@ def _ids_given_irange_filters(matched_keys, idx, **kwargs):
     :param kwargs dict: irange filters
     :rtype set:
     """
+    clean_idx_key = kwargs.get('minimum') or kwargs.get('maximum')
+    # if 'minimum' in kwargs:
+    #     kwargs['maximum'] = (bytes([ord(kwargs['minimum'][0]) + 1]), None)
+    # if 'maximum' in kwargs:
+    #     kwargs['minimum'] = (bytes([ord(kwargs['maximum'][0]) - 1]), None)
+    ret = set(idx.irange(**kwargs))
+    ret = set(key for key in ret if key[0] == clean_idx_key[0])
+
     if matched_keys:
-        return matched_keys.intersection(set(idx.irange(**kwargs)))
-    return set(idx.irange(**kwargs))
+        return set.intersection(matched_keys, ret)
+    return ret
 
 
 def _idx_filter_sort(query_op_tup):
@@ -227,7 +264,7 @@ def _get_ids_from_idx(idx, query_ops):
                 elif query_op == '$lte':
                     matched_keys = _ids_given_irange_filters(matched_keys, idx,
                                                              maximum=clean_idx_key,
-                                                             inclusive=(True, True))
+                                                             inclusive=(False, True))
                 elif query_op == '$gt':
                     matched_keys = _ids_given_irange_filters(matched_keys, idx,
                                                              minimum=clean_idx_key,
@@ -235,15 +272,17 @@ def _get_ids_from_idx(idx, query_ops):
                 elif query_op == '$gte':
                     matched_keys = _ids_given_irange_filters(matched_keys, idx,
                                                              minimum=clean_idx_key,
-                                                             inclusive=(True, True))
+                                                             inclusive=(True, False))
                 elif query_op == '$in':
                     if not isinstance(query_val, (list, tuple, set)):
                         raise MongitaError("'$in' requires an iterable")
-                    matched_keys = set(k for k in matched_keys or idx.keys() if k in query_val)
+                    clean_q_val = [_make_idx_key(e) for e in query_val]
+                    matched_keys = set(k for k in matched_keys or idx.keys() if k in clean_q_val)
                 elif query_op == '$nin':
                     if not isinstance(query_val, (list, tuple, set)):
                         raise MongitaError("'$nin' requires an iterable")
-                    matched_keys = set(k for k in matched_keys or idx.keys() if k not in query_val)
+                    clean_q_val = [_make_idx_key(e) for e in query_val]
+                    matched_keys = set(k for k in matched_keys or idx.keys() if k not in clean_q_val)
                 # validation of options is done earlier
         ret = set()
         for k in matched_keys:
@@ -390,11 +429,11 @@ def _make_idx_key(idx_key):
     :rtype: hashable value
     """
     if isinstance(idx_key, collections.abc.Hashable):
-        return idx_key
+        return _sort_tup(idx_key)
     try:
-        return str(bson.encode(idx_key))
+        return _sort_tup(str(bson.encode(idx_key)))
     except TypeError:
-        return str(bson.encode({'idx_key': idx_key}))
+        return _sort_tup(str(bson.encode({'idx_key': idx_key})))
 
 
 def _update_idx_doc_with_new_documents(documents, idx_doc):
@@ -413,8 +452,7 @@ def _update_idx_doc_with_new_documents(documents, idx_doc):
 
     for doc in documents:
         key = _make_idx_key(_get_item_from_doc(doc, key_str))
-        if key is not None:
-            new_idx.setdefault(key, set()).add(doc['_id'])
+        new_idx.setdefault(key, set()).add(doc['_id'])
 
     reverse = idx_doc['direction'] == DESCENDING
     idx_doc['idx'] = sortedcontainers.SortedDict(sorted(new_idx.items(), reverse=reverse))
@@ -434,6 +472,34 @@ def _remove_docs_from_idx_doc(doc_ids, idx_doc):
         idx_doc_idx[k] -= doc_ids
 
 
+def _sort_tup(item):
+    """
+    Get sort tuple of item type according to mongodb rules
+
+    :param item Value:
+    :rtype: (int, Value)
+    """
+    try:
+        return (SORT_ORDER[type(item)], item)
+    except KeyError:
+        pass
+    # this assumes the item is None but could catch other
+    # types if we are not careful. Sorting bugs are minor though
+    return (b'\x01', item)
+
+
+def _sort_func(doc, sort_key):
+    """
+    Sorter to sort different types according to MongoDB rules
+
+    :param doc dict:
+    :param sort_key str:
+    :rtype: tuple
+    """
+    item = _get_item_from_doc(doc, sort_key)
+    return _sort_tup(item)
+
+
 def _sort_docs(docs, sort_list):
     """
     Given the sort list provided in the .sort() method,
@@ -445,11 +511,12 @@ def _sort_docs(docs, sort_list):
     :param sort_list list[(key, direction)]
     :rtype: None
     """
-    for k, direction in reversed(sort_list):
+    for sort_key, direction in reversed(sort_list):
+        _sort_func_partial = functools.partial(_sort_func, sort_key=sort_key)
         if direction == ASCENDING:
-            docs.sort(key=lambda d: _get_item_from_doc(d, k))
+            docs.sort(key=_sort_func_partial)
         elif direction == DESCENDING:
-            docs.sort(key=lambda d: _get_item_from_doc(d, k), reverse=True)
+            docs.sort(key=_sort_func_partial, reverse=True)
         # validation on direction happens in cursor
 
 
@@ -483,13 +550,18 @@ def _apply_indx_ops(indx_ops):
     :param indexes dict:
     :rtype: set
     """
-    doc_ids_from_all_indx_ops = []
+    doc_ids_so_far = set()
     for idx, query_ops in indx_ops:
         doc_ids = _get_ids_from_idx(idx, query_ops)
         if not doc_ids:
             return set()
-        doc_ids_from_all_indx_ops.append(doc_ids)
-    return set.intersection(*doc_ids_from_all_indx_ops)
+        if doc_ids_so_far:
+            doc_ids_so_far = doc_ids_so_far.intersection(doc_ids)
+            if not doc_ids_so_far:
+                return set()
+        else:
+            doc_ids_so_far = doc_ids
+    return doc_ids_so_far
 
 
 class Collection():

@@ -8,7 +8,8 @@ Mongita is a lightweight embedded document database that implements a commonly-u
 
 > *"Mongita is to MongoDB as SQLite is to SQL"*
 
-Mongita is in active development. Please report any bugs. Anticipate breaking changes until version 1.0. Mongita is free and open source. [You can contribute!]((#contributing))
+### Should I use Mongita
+Mongita is in active development. Please report any bugs. Mongita has not been tested in enough production environments to recommend use for imporant projects. Mongita is free and open source. [You can contribute!]((#contributing))
 
 ### Applications
 - **Embedded database**: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
@@ -142,6 +143,7 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
 ### Contributing
 
 Mongita is an *excellent* project for open source contributors. There is a lot to do and it is easy to get started. In particular, the following tasks are high in priority:
+- More testing. Try Mongita on a project and report any bugs. The unit tests are extensive but in-the-wild bugs are always possible.
 - More [update operators](https://docs.mongodb.com/manual/reference/operator/update/#id1). Currently, only $set and $inc are implemented.
 - More [query operators](https://docs.mongodb.com/manual/reference/operator/query/). Currently, only the "comparison operators" are implemented.
 - [find_one_and_...](https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html#pymongo.collection.Collection.find_one_and_replace) methods.
