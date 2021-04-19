@@ -3,6 +3,9 @@ import re
 import setuptools
 import sys
 
+DESCRIPTION = "Mongita is a lightweight embedded document database that " \
+              "implements a commonly-used subset of the MongoDB/PyMongo interface."
+
 if sys.version_info[:2] < (3, 7):
     print("ERROR: this package requires Python 3.7 or later!")
     sys.exit(1)
@@ -14,17 +17,15 @@ with open(os.path.join("mongita", "__init__.py")) as f:
     version = re.search(r"^VERSION \= \"([0-9.]+)\"", f.read(),
                         re.MULTILINE).group(1)
 
-url_base = "https://github.com/mongita/mongita"
+url_base = "https://github.com/scottrogowski/mongita"
 download_url = '%s/archive/mongita-%s.tar.gz' % (url_base, version)
-
-# TODO publish pip
 
 setuptools.setup(
     name="mongita",
     version=version,
     author="Scott Rogowski",
     author_email="scottmrogowski@gmail.com",
-    description="Mongita is a lightweight embedded document database that implements a commonly-used subset of the MongoDB/PyMongo interface.",
+    description=DESCRIPTION,
     long_description=long_description,
     long_description_content_type="text/markdown",
     url=url_base,

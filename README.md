@@ -1,6 +1,4 @@
-# Mongita 
-
-![Mongita Baby Mongoose](assets/mongita.jpg)
+![Mongita Logo](assets/mongita.jpg)
 
 ![Version 0.0.1](https://img.shields.io/badge/version-0.0.1-red) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
 
@@ -8,8 +6,7 @@ Mongita is a lightweight embedded document database that implements a commonly-u
 
 > *"Mongita is to MongoDB as SQLite is to SQL"*
 
-### Should I use Mongita
-Mongita is in active development. Please report any bugs. Mongita has not been tested in enough production environments to recommend use for imporant projects. Mongita is free and open source. [You can contribute!]((#contributing))
+Mongita is in active development. Please report any bugs. Mongita is free and open source. [You can contribute!]((#contributing))
 
 ### Applications
 - **Embedded database**: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
@@ -24,10 +21,9 @@ Mongita is in active development. Please report any bugs. Mongita has not been t
 - **Thread-safe**: (EXPERIMENTAL) Mongita avoids race conditions by isolating certain document modification operations.
 
 ### When NOT to use Mongita
-- **Your database has multiple clients**: Mongita is an embedded database. It is not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
-- **You need extreme speed**: Mongita is fast enough in most cases. However, if database transactions are your bottleneck and you are dealing with hundreds every second, you might want to use a standard MongoDB server or SQLite.
+- **You need a traditional server/client relationship**: Mongita is an embedded database. It is not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
 - **You run a lot of uncommon commands**: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
-- **You need something battle-tested**: Mongita has limited use in the real-world thus far.
+- **You need extreme performance**: Mongita has comparable performance to MongoDB and SQLite for common operations. However, it's possible you'll find bottlenecks - especially with uncommon operations. 
 
 ### Installation
 
@@ -167,4 +163,4 @@ Both of these are similar projects which appear to be missing some important fun
 - [TinyMongo](https://github.com/schapman1974/tinymongo)
 - [MontyDb](https://github.com/davidlatwe/montydb)
 
-Also worth a mention, the most popular nosql embedded database which does NOT attempt to embed MongoDB is [UnQLite](https://unqlite.org/).
+Also worth a mention, the most popular nosql embedded database which does NOT attempt to implement the MongoDB language is [UnQLite](https://unqlite.org/).
