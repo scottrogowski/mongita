@@ -1,4 +1,4 @@
-![Mongita Logo](assets/mongita.jpg)
+![Mongita Logo](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/mongita.jpg)
 
 ![Version 0.0.1](https://img.shields.io/badge/version-0.0.1-red) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
 
@@ -51,10 +51,10 @@ Mongita is in active development. Please report any bugs. Mongita is free and op
 
 ### Performance
 
-![Inserts and access](assets/performance_comparison_inserts_and_access.svg)
-![Finds](assets/performance_comparison_finds.svg)
-![Updates and deletes](assets/performance_comparison_updates_and_deletes.svg)
-![Cold start](assets/performance_comparison_cold_starts.svg)
+![Inserts and access](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/performance_comparison_inserts_and_access.svg)
+![Finds](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/performance_comparison_finds.svg)
+![Updates and deletes](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/performance_comparison_updates_and_deletes.svg)
+![Cold start](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/performance_comparison_cold_starts.svg)
 
 ### API
 

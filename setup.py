@@ -6,8 +6,8 @@ import sys
 DESCRIPTION = "Mongita is a lightweight embedded document database that " \
               "implements a commonly-used subset of the MongoDB/PyMongo interface."
 
-if sys.version_info[:2] < (3, 7):
-    print("ERROR: this package requires Python 3.7 or later!")
+if sys.version_info[:2] < (3, 6):
+    print("ERROR: this package requires Python 3.6 or later!")
     sys.exit(1)
 
 with open("README.md", "r") as fh:
@@ -38,7 +38,7 @@ setuptools.setup(
     ],
     python_requires='>=3.6',
     install_requires=[
-        'pymongo>=3.11,<4.0',
+        'pymongo>=3.0,<4.0',
         'sortedcontainers>=2.3,<3.0'
     ],
 )

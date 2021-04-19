@@ -1,3 +1,7 @@
+build:
+	rm -rf dist
+	python3 setup.py sdist
+
 test:
 	coverage run --concurrency=multiprocessing -m pytest tests -vx || exit 1
 	coverage combine
