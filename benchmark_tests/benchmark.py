@@ -109,7 +109,7 @@ class SqliteCollectionWrapperJson():
         cur = self.con.cursor()
         # cur.execute("""DROP TABLE  docs;""")
         # self.con.commit()
-        cur.execute("""CREATE TABLE IF NOT EXISTS docs (idd TEXT, dict JSON);""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS docs (idd TEXT, dict JSON, PRIMARY KEY(idd));""")
         self.con.commit()
         self.cur = self.con.cursor()
 
@@ -166,7 +166,7 @@ class SqliteCollectionWrapper():
         cur = self.con.cursor()
         # cur.execute("""DROP TABLE  docs;""")
         # self.con.commit()
-        cur.execute("""CREATE TABLE IF NOT EXISTS docs (idd TEXT, name TEXT, dt DATETIME, count int, city TEXT, content TEXT, percent REAL, dict JSON);""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS docs (idd TEXT, name TEXT, dt DATETIME, count int, city TEXT, content TEXT, percent REAL, dict JSON, PRIMARY KEY(idd));""")
         self.con.commit()
         self.cur = self.con.cursor()
 
