@@ -90,9 +90,9 @@ class DiskEngine(Engine):
         pos = self._get_file_attrs(collection)[str(doc_id)]
         fh = self._get_coll_fh(collection)
         fh.seek(pos)
-        first_byte = fh.read(4)
-        doc_len = int.from_bytes(first_byte, 'little', signed=True)
-        doc = bson.decode(first_byte + fh.read(doc_len - 4))
+        doc_len_bytes = fh.read(4)
+        doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
+        doc = bson.decode(doc_len_bytes + fh.read(doc_len - 4))
         self._cache[itrn(collection)][itrn(doc_id)] = doc
         return doc
 
@@ -107,8 +107,8 @@ class DiskEngine(Engine):
         pos = self._get_file_attrs(collection).get(str(doc_id))
         if pos is not None:
             fh.seek(pos)
-            first_byte = fh.read(4)
-            spare_bytes = int.from_bytes(first_byte, 'little', signed=True) - len(encoded_doc)
+            doc_len_bytes = fh.read(4)
+            spare_bytes = int.from_bytes(doc_len_bytes, 'little', signed=True) - len(encoded_doc)
             if spare_bytes >= 0:
                 fh.seek(pos)
                 fh.write(encoded_doc + b'\x00' * spare_bytes)
@@ -129,8 +129,8 @@ class DiskEngine(Engine):
         pos = self._get_file_attrs(collection)[doc_id]
         fh = self._get_coll_fh(collection)
         fh.seek(pos)
-        first_byte = fh.read(4)
-        doc_len = int.from_bytes(first_byte, 'little', signed=True)
+        doc_len_bytes = fh.read(4)
+        doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
         fh.seek(pos)
         fh.write(b'\x00' * doc_len)
         fh.flush()
@@ -162,13 +162,13 @@ class DiskEngine(Engine):
     #     fh.seek(0)
     #     docs = []
     #     while True:
-    #         first_byte = fh.read(4)
-    #         if not first_byte:
+    #         doc_len_bytes = fh.read(4)
+    #         if not doc_len_bytes:
     #             break
-    #         doc_len = int.from_bytes(first_byte, 'little', signed=True)
+    #         doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
     #         if not doc_len:
     #             continue
-    #         doc = bson.decode(first_byte + fh.read(doc_len - 4))
+    #         doc = bson.decode(doc_len_bytes + fh.read(doc_len - 4))
     #         docs.append((pos, doc))
     #         pos += doc_len
 
@@ -190,9 +190,9 @@ class DiskEngine(Engine):
                 pos = self._get_file_attrs(collection)[str(doc_id)]
                 fh = self._get_coll_fh(collection)
                 fh.seek(pos)
-                first_byte = fh.read(4)
-                doc_len = int.from_bytes(first_byte, 'little', signed=True)
-                encoded_docs[doc_id] = first_byte + fh.read(doc_len - 4)
+                doc_len_bytes = fh.read(4)
+                doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
+                encoded_docs[doc_id] = doc_len_bytes + fh.read(doc_len - 4)
 
         pos = 0
         fh.seek(0)

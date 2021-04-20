@@ -28,7 +28,8 @@ NOW_TS = int(datetime.now().timestamp())
 CLIENT_COLORS = {
     'Mongita Memory': '#D8A753',
     'Mongita Disk': '#82592C',
-    'Sqlite': '#0B3647',
+    'Sqlite (traditional)': '#0B3647',
+    'Sqlite (JSON1)': '#439FD8',
     'MongoDB+PyMongo': '#449B45',
 }
 
@@ -61,17 +62,23 @@ def _to_sqlite_row(doc):
             json.dumps(doc['dict'], default=json_util.default))
 
 
+def _to_sqlite_row_json(doc):
+    doc['_id'] = str(doc['_id'])
+    return (doc['_id'], json.dumps(doc['dict'], default=json_util.default))
+
+
 SQLITE_LOC = 'tmp.sqlite'
 
 
 class SqliteWrapper():
-    def __init__(self):
+    def __init__(self, use_json):
         self._sqlite_database_wrapper = None
+        self.use_json = use_json
 
     def __getattr__(self, attr):
         if self._sqlite_database_wrapper:
             return self._sqlite_database_wrapper
-        self._sqlite_database_wrapper = SqliteDatabaseWrapper()
+        self._sqlite_database_wrapper = SqliteDatabaseWrapper(self.use_json)
         return self._sqlite_database_wrapper
 
     def drop_database(self, db):
@@ -82,14 +89,75 @@ class SqliteWrapper():
 
 
 class SqliteDatabaseWrapper():
-    def __init__(self):
+    def __init__(self, use_json):
         self._sqlite_collection_wrapper = None
+        self.use_json = use_json
 
     def __getattr__(self, attr):
         if self._sqlite_collection_wrapper:
             return self._sqlite_collection_wrapper
-        self._sqlite_collection_wrapper = SqliteCollectionWrapper()
+        if self.use_json:
+            self._sqlite_collection_wrapper = SqliteCollectionWrapperJson()
+        else:
+            self._sqlite_collection_wrapper = SqliteCollectionWrapper()
         return self._sqlite_collection_wrapper
+
+
+class SqliteCollectionWrapperJson():
+    def __init__(self):
+        self.con = sqlite3.connect(SQLITE_LOC)
+        cur = self.con.cursor()
+        # cur.execute("""DROP TABLE  docs;""")
+        # self.con.commit()
+        cur.execute("""CREATE TABLE IF NOT EXISTS docs (idd TEXT, dict JSON);""")
+        self.con.commit()
+        self.cur = self.con.cursor()
+
+    def insert_many(self, documents):
+        cur = self.con.cursor()
+        cur.executemany('INSERT INTO docs VALUES(?,?);', [_to_sqlite_row_json(d) for d in documents])
+        self.con.commit()
+        cur.execute("SELECT count() from docs")
+
+    def find_one(self, filter):
+        idd = filter['_id']
+        self.cur.execute("SELECT dict from docs WHERE idd=(?) LIMIT 1;", (idd,))
+        return json.loads(self.cur.fetchone()[0])
+
+    def find(self, filter):
+        cur = self.con.cursor()
+        if not filter:
+            cur.execute("SELECT dict FROM docs")
+            return [json.loads(row[0]) for row in cur.fetchall()]
+        if filter == {'city': 'Reno'}:
+            cur.execute("SELECT idd, dict FROM docs where json_extract(dict, '$.city') = 'Reno'")
+            return [json.loads(row[1]) for row in cur.fetchall()]
+        if filter == {'percent': {'$lt': .33}}:
+            cur.execute("SELECT idd, dict FROM docs where json_extract(dict, '$.value') < 0.33")
+            return [json.loads(row[1]) for row in cur.fetchall()]
+        raise AssertionError(filter)
+
+    def update_many(self, filter, update):
+        cur = self.con.cursor()
+        content = update['$set']['content']
+        if filter['city'] == 'Reno':
+            cur.execute(f"UPDATE docs SET dict=(select json_set(docs.dict, '$.content', '{content}') from docs) where json_extract(dict, '$.city')='Reno';")
+            return True
+        elif filter['city'] == 'Philly':
+            cur.execute(f"UPDATE docs SET dict=(select json_set(docs.dict, '$.content', '{content}') from docs) where json_extract(dict, '$.city')='Philly';")
+            return True
+        raise AssertionError(filter)
+
+    def delete_many(self, filter):
+        assert filter == {}
+        cur = self.con.cursor()
+        cur.execute("DELETE FROM docs where true=true;")
+        return True
+
+    def create_index(self, index_name):
+        # cur = self.con.cursor()
+        # cur.execute(f"CREATE INDEX {index_name}_idx ON docs({index_name})")
+        return True
 
 
 class SqliteCollectionWrapper():
@@ -255,21 +323,23 @@ def bm():
     clients = {
         'Mongita Memory': mongita.MongitaClientMemory,
         'Mongita Disk': functools.partial(mongita.MongitaClientDisk, '/tmp/mongita_benchmarks'),
-        'Sqlite': SqliteWrapper,
+        'Sqlite (traditional)': functools.partial(SqliteWrapper, use_json=False),
+        'Sqlite (JSON1)': functools.partial(SqliteWrapper, use_json=True),
         'MongoDB+PyMongo': pymongo.MongoClient,
     }
-
 
     assert os.getcwd().split('/')[-1] == 'mongita' and os.path.exists('assets')
 
     all_stats = {}
     for cli_name, cli_cls in clients.items():
         print("\nRunning loop for %s" % cli_name)
+        print('=' * 20)
         stats = {}
         all_stats[cli_name] = stats
         cli = cli_cls()
         try:
             cli.drop_database('bm')
+            print("Dropped database for %s" % cli)
         except:
             print("Could not drop database for %s" % cli)
 
@@ -290,14 +360,15 @@ def bm():
         with Timer(stats, "Find numerically (~3300 docs)"):
             list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
-        cli.bm.bm.create_index('city')
-        cli.bm.bm.create_index('percent')
+        if 'JSON1' not in cli_name:
+            cli.bm.bm.create_index('city')
+            cli.bm.bm.create_index('percent')
 
-        with Timer(stats, "Find categorically (~3300 docs) (indexed)"):
-            list(cli.bm.bm.find({'city': 'Reno'}))
+            with Timer(stats, "Find categorically (~3300 docs) (indexed)"):
+                list(cli.bm.bm.find({'city': 'Reno'}))
 
-        with Timer(stats, "Find numerically (~3300 docs) (indexed)"):
-            list(cli.bm.bm.find({'percent': {'$lt': .33}}))
+            with Timer(stats, "Find numerically (~3300 docs) (indexed)"):
+                list(cli.bm.bm.find({'percent': {'$lt': .33}}))
 
         # TODO updating is the one thing that is embarassingly slow.
         # need to find optimizations in it
@@ -342,10 +413,10 @@ def bm():
             assert cli.bm.bm.delete_many({})
 
         print()
-        print(cli)
-        print('=' * 20)
+        print("Final stats for", cli)
         for k, v in stats.items():
             print("%s: %.3f" % (k, v))
+        print("\n")
 
     all_keys = list(all_stats['Mongita Disk'].keys())
     chart_types = {
