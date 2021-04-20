@@ -158,9 +158,7 @@ Mongita was started as a component of the [fastmap server](https://github.com/fa
 
 ### Similar projects
 
-Both of these are similar projects which appear to be missing some important functionality (e.g. indexes).
-
-- [TinyMongo](https://github.com/schapman1974/tinymongo)
-- [MontyDb](https://github.com/davidlatwe/montydb)
-
-Also worth a mention, the most popular nosql embedded database which does NOT attempt to implement the MongoDB language is [UnQLite](https://unqlite.org/).
+- [TinyMongo](https://github.com/schapman1974/tinymongo): Python library. Attempts to replicate the MongoDB interface.
+- [MontyDb](https://github.com/davidlatwe/montydb): Python library. Attempts to replicate the MongoDB interface.
+- [UnQLite](https://unqlite.org/): Embedded NoSQL with Python bindings. Does not attempt to replicate the MongoDB interface. Very popular.
+- [NeDB](https://github.com/louischatriot/nedb): Javascript library. Attempts to replicate the MongoDB interface. Very popular.
