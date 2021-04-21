@@ -1,6 +1,6 @@
 ![Mongita Logo](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/mongita.jpg)
 
-![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-yellow) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
+![Version 0.1.1](https://img.shields.io/badge/version-0.1.1-yellow) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
 
 Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on disk or in memory.
 
@@ -34,20 +34,20 @@ Mongita is in active development. Please report any bugs. Mongita is free and op
     >>> from mongita import MongitaClientDisk
     >>> client = MongitaClientDisk()
     >>> hello_world_db = client.hello_world_db
-    >>> mongoose_types = hello_world_db.mongoose_types
-    >>> mongoose_types.insert_many([{'name': 'Meercat', 'not_into', 'Snakes'},
-                                    {'name': 'Yellow mongoose': 'eats': 'Termites'}])
-    InsertResult()
-    >>> mongoose_types.count_documents({})
+    >>> mongoose_collection = hello_world_db.mongoose_collection
+    >>> mongoose_collection.insert_many([{'name': 'Meercat', 'does_not_eat': 'Snakes'},
+                                         {'name': 'Yellow mongoose', 'eats': 'Termites'}])
+    <mongita.results.InsertManyResult object at 0x000000000>
+    >>> mongoose_collection.count_documents({})
     2
-    >>> mongoose_types.update_one({'name': 'Meercat'}, {'$set': {"weight": 2}})
-    UpdateResult()
-    >>> mongoose_types.find({'weight': {'$gt': 1})
-    Cursor()
-    >>> list(coll.find({'weight': {'$gt': 1}))
-    [{'_id': 'a1b2c3d4e5f6', 'weight': 2, 'name': 'Meercat'}]
-    >>> coll.delete_one({'name': 'Meercat'})
-    DropResult()
+    >>> mongoose_collection.update_one({'name': 'Meercat'}, {'$set': {"weight": 2}})
+    <mongita.results.UpdateResult object at 00000000000>
+    >>> mongoose_collection.find({'weight': {'$gt': 1}})
+    <mongita.cursor.Cursor object at 00000000000>
+    >>> list(mongoose_collection.find({'weight': {'$gt': 1}}))
+    [{'_id': 'a1b2c3d4e5f6', 'name': 'Meercat', 'does_not_eat': 'Snakes', 'weight': 2}]
+    >>> mongoose_collection.delete_one({'name': 'Meercat'})
+    <mongita.results.DeleteResult object at 00000000000>
 
 ### Performance
 

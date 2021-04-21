@@ -391,15 +391,31 @@ def bm():
                 retrieved_docs = list(cli.bm.bm.find({}))
             assert len(retrieved_docs) == len(insert_docs)
 
+            if isinstance(cli, pymongo.MongoClient):
+                assert os.system('brew services restart mongodb-community') == 0
+            cli = cli_cls()
+
             with Timer(stats, "Get 1000 docs by id "):
                 list(cli.bm.bm.find_one({'_id': _id})
                      for _id in random.sample(insert_doc_ids, 1000))
 
+            if isinstance(cli, pymongo.MongoClient):
+                assert os.system('brew services restart mongodb-community') == 0
+            cli = cli_cls()
+
             with Timer(stats, "Find categorically (~3300 docs) "):
                 list(cli.bm.bm.find({'city': 'Reno'}))
 
+            if isinstance(cli, pymongo.MongoClient):
+                assert os.system('brew services restart mongodb-community') == 0
+            cli = cli_cls()
+
             with Timer(stats, "Find numerically (~3300 docs) "):
                 list(cli.bm.bm.find({'percent': {'$lt': .33}}))
+
+            if isinstance(cli, pymongo.MongoClient):
+                assert os.system('brew services restart mongodb-community') == 0
+            cli = cli_cls()
 
             with Timer(stats, "Update text field (~3300 docs x2) "):
                 assert cli.bm.bm.update_many(
