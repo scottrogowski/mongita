@@ -15,7 +15,7 @@ Mongita is in active development. Please report any bugs. Mongita is free and op
 ### Design goals
 - **MongoDB compatibility**: Mongita implements a commonly-used subset of the PyMongo API. This allows projects to be started with Mongita and later upgraded to MongoDB once they reach an appropriate scale.
 - **Embedded/self-contained**: Mongita does not require a server or start a process. It is just a Python library. To use it, just add `import mongita` to the top of your script.
-- **Speed**: Mongita is comparable-to or faster than both MongoDB and Sqlite in 10k document benchmarks. See the performance section below.
+- **Speed**: Mongita is within an order of magnitude of MongoDB and Sqlite in 10k document benchmarks. See the performance section below.
 - **Well tested**: Mongita has 100% test coverage and more test code than library code.
 - **Limited dependencies**: Mongita runs anywhere that Python runs. Currently the only dependencies are `pymongo` (for bson) and `sortedcontainers` (for faster indexes).
 - **Thread-safe**: (EXPERIMENTAL) Mongita avoids race conditions by isolating certain document modification operations.
@@ -139,7 +139,9 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
 ### Contributing
 
 Mongita is an *excellent* project for open source contributors. There is a lot to do and it is easy to get started. In particular, the following tasks are high in priority:
-- More testing. Try Mongita on a project and report any bugs. The unit tests are extensive but in-the-wild bugs are always possible.
+- More testing. Try Mongita on a project and report any bugs. The unit tests are extensive but in-the-wild bugs are still possible.
+- SQLite engine. SQLite beats Mongita in most benchmarks. Having it as an engine would provide a fast persistent database which would be a little less than a perfect MongoDB reproduction.
+- Cache eviction. In the disk engine, cache is never evicted after it is read or written. This could cause issues when dealing with large databases.
 - More [update operators](https://docs.mongodb.com/manual/reference/operator/update/#id1). Currently, only $set and $inc are implemented.
 - More [query operators](https://docs.mongodb.com/manual/reference/operator/query/). Currently, only the "comparison operators" are implemented.
 - [find_one_and_...](https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html#pymongo.collection.Collection.find_one_and_replace) methods.
