@@ -28,7 +28,11 @@ def _validate_sort(key_or_list, direction=None):
 
 
 class Cursor():
-    UNIMPLEMENTED = ['add_option', 'address', 'alive', 'allow_disk_use', 'batch_size', 'clone', 'collation', 'collection', 'comment', 'cursor_id', 'distinct', 'explain', 'hint', 'limit', 'max', 'max_await_time_ms', 'max_time_ms', 'min', 'remove_option', 'retrieved', 'rewind', 'session', 'skip', 'where']
+    UNIMPLEMENTED = ['add_option', 'address', 'alive', 'allow_disk_use', 'batch_size',
+                     'collation', 'collection', 'comment', 'cursor_id', 'distinct',
+                     'explain', 'hint', 'limit', 'max', 'max_await_time_ms',
+                     'max_time_ms', 'min', 'remove_option', 'retrieved', 'rewind',
+                     'session', 'skip', 'where']
     DEPRECATED = ['count', 'max_scan']
 
     def __init__(self, _find, filter, sort, limit):
@@ -113,6 +117,10 @@ class Cursor():
 
         self._limit = limit
         return self
+
+    @support_alert
+    def clone(self):
+        return Cursor(self._find, self._filter, self._sort, self._limit)
 
     @support_alert
     def close(self):

@@ -1,6 +1,6 @@
 ![Mongita Logo](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/mongita.jpg)
 
-![Version 0.1.2](https://img.shields.io/badge/version-0.1.2-yellow) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
+![Version 0.1.3](https://img.shields.io/badge/version-0.1.3-yellow) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
 
 Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on disk or in memory.
 

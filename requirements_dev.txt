@@ -6,6 +6,9 @@ sortedcontainers>=2.3,<3.0
 pytest>=6.0.2,<6.1
 coverage>4.5,<4.6  # downgraded for --concurrency flag
 
+# Third party compatibility
+mongoengine>=0.23,<1.0
+
 # Benchmarking
 plotly>=4.14,<5.0
 pygount>=1.2,<2.0
@@ -14,4 +17,4 @@ requests>=2.25,<3.0  # also for image chart generation
 
 # Development
 ipdb>=0.13
-
+icecream>=2.1,<3.0
