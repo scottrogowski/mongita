@@ -319,6 +319,19 @@ def test_find(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
+def test_find_in_list(client_class):
+    """Test for fix with find in list"""
+    client, coll, imr = setup_many(client_class)
+    assert coll.count_documents({'continents': 'EA'}) == 4
+    assert coll.find_one({'continents': 'NA'})['name'] == "Human"
+
+    client, coll, imr = setup_many(client_class)
+    coll.create_index('continents')
+    assert coll.count_documents({'continents': 'EA'}) == 4
+    assert coll.find_one({'continents': 'NA'})['name'] == "Human"
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
 def test_cursor(client_class):
     client, coll, imr = setup_many(client_class)
     doc_cursor = coll.find()
