@@ -12,11 +12,9 @@ pymongo.MongoClient = mongita.MongitaClientMemory
 import mongoengine
 
 
-DB_NAME = 'mongita_test_db'
-
-
 def setup_module():
     pass
+
 
 def teardown_module():
     mongoengine.disconnect()
@@ -58,7 +56,3 @@ def test_mongoengine():
     posts = list(Post.objects().filter(tags='mongodb').all())
     assert len(posts) == 1
     assert posts[0].title == 'Fun with MongoEngine'
-
-
-# def test_mongoengine():
-#     _test_mongoengine()

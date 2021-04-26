@@ -144,9 +144,6 @@ class MongitaClientDisk(MongitaClient):
     compatible in most ways with pymongo's MongoClient.
     """
     def __init__(self, bucket=DEFAULT_STORAGE_DIR, **kwargs):
-        print('\a'); from icecream import ic; ic(bucket)
-        print('\a'); from icecream import ic; ic(kwargs)
-
         self.engine = disk_engine.DiskEngine.create(bucket)
         self.is_primary = True
         super().__init__()
@@ -163,9 +160,6 @@ class MongitaClientMemory(MongitaClient):
     pymongo's MongoClient.
     """
     def __init__(self, strict=False, **kwargs):
-        print('\a'); from icecream import ic; ic(strict)
-        print('\a'); from icecream import ic; ic(kwargs)
-
         self.engine = memory_engine.MemoryEngine.create(strict)
         self.is_primary = True
         super().__init__()

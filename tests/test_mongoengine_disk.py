@@ -5,13 +5,11 @@ import pymongo
 
 sys.path.append(os.getcwd().split('/tests')[0])
 
-from test_mongita import remove_test_dir, TEST_DIR, _MongitaClientDisk
+from test_mongita import remove_test_dir, _MongitaClientDisk
 
 pymongo.MongoClient = _MongitaClientDisk
 
 import mongoengine
-
-# from test_mongoengine import _test_mongoengine
 
 
 def setup_module():
@@ -40,7 +38,6 @@ class Post(mongoengine.Document):
 
 
 def test_mongoengine():
-    # _test_mongoengine()
     mongoengine.connect("test")
 
     post1 = Post(title='Fun with MongoEngine')
