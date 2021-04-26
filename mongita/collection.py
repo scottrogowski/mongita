@@ -192,7 +192,10 @@ def _doc_matches_slow_filters(doc, slow_filters):
                 continue
             return False
 
-        if _get_item_from_doc(doc, doc_key) == query_ops:
+        item_from_doc = _get_item_from_doc(doc, doc_key)
+        if isinstance(item_from_doc, list) and query_ops in item_from_doc:
+            continue
+        if item_from_doc == query_ops:
             continue
         return False
     return True
@@ -451,7 +454,12 @@ def _update_idx_doc_with_new_documents(documents, idx_doc):
     new_idx = sortedcontainers.SortedDict(idx_doc['idx'])
 
     for doc in documents:
-        key = _make_idx_key(_get_item_from_doc(doc, key_str))
+        item_from_doc = _get_item_from_doc(doc, key_str)
+        if isinstance(item_from_doc, list):
+            for item in item_from_doc:
+                key = _make_idx_key(item)
+                new_idx.setdefault(key, set()).add(doc['_id'])
+        key = _make_idx_key(item_from_doc)
         new_idx.setdefault(key, set()).add(doc['_id'])
 
     reverse = idx_doc['direction'] == DESCENDING
