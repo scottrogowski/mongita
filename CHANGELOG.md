@@ -1,5 +1,14 @@
 # Mongita CHANGELOG
 
+## [0.2.0] - 2021-04-29
+### Added
+- Add clone to cursor
+- Add ReadConcern / WriteConcern dummies
+- Add tests for mongoengine (still requires monkeypatching)
+
+### Fixed
+- Unimplemented parameter warning wasn't doing string interpolation correctly
+
 ## [0.1.3] - 2021-04-26
 ### Added
 - Added support for in-list equality. E.g. usually when you have a query like
