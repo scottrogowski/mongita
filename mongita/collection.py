@@ -1097,7 +1097,7 @@ class Collection():
         return metadata
 
     @support_alert
-    def create_index(self, keys):
+    def create_index(self, keys, background=False):
         """
         Create a new index for the collection.
         Indexes can dramatically speed up queries that use its fields.
@@ -1105,8 +1105,12 @@ class Collection():
         Returns the name of the new index.
 
         :param keys str|[(key, direction)]:
+        :param background bool:
         :rtype: str
         """
+        if background is not False:
+            raise MongitaNotImplementedError("background index creation is not supported")
+
         self.__create()
 
         if isinstance(keys, str):

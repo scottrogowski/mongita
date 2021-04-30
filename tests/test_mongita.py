@@ -149,7 +149,7 @@ def test_insert_one(client_class):
         coll.insert_one()
 
     # kwarg support_alert
-    with pytest.raises(TypeError):
+    with pytest.raises(errors.MongitaError):
         coll.insert_one({'doc': 'doc'}, bypass_document_validation=True)
     assert isinstance(ior, results.InsertOneResult)
     assert isinstance(repr(ior), str)
@@ -971,6 +971,9 @@ def test_indicies_basic(client_class):
         coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index([('key', 2)])
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.create_index('kingdom', background=True)
+
 
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'

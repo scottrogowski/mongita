@@ -33,6 +33,13 @@ class Post(mongoengine.Document):
     tags = mongoengine.ListField(mongoengine.StringField(max_length=30))
     link_url = mongoengine.StringField()
 
+    meta = {
+        'indexes': [
+            'title',
+            'author',
+        ]
+    }
+
     def __repr__(self):
         return f"POST: {self.title} by {self.author} tagged {self.tags}"
 
