@@ -68,7 +68,7 @@ def support_alert(func):
                 raise MongitaError("The argument %r is not supported by %r in Mongita. "
                                    "This may or may not be supported in PyMongo. "
                                    "If it is, you can help implement it." %
-                                   k, func)
+                                   (k, func))
         return func(*args, **kwargs)
     return inner
 

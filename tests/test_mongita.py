@@ -15,7 +15,7 @@ sys.path.append(os.getcwd().split('/tests')[0])
 import mongita
 from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDING,
                      errors, results, cursor, collection, command_cursor, database,
-                     engines)
+                     engines, read_concern, write_concern)
 random.seed(42)
 
 TEST_DOCS = [
@@ -114,9 +114,11 @@ _MongitaClientDisk = functools.partial(MongitaClientDisk, TEST_DIR)
 LEN_TEST_DOCS = len(TEST_DOCS)
 CLIENTS = (MongitaClientMemory, _MongitaClientDisk)
 
+
 def remove_test_dir():
     if os.path.exists(TEST_DIR):
         shutil.rmtree(TEST_DIR)
+
 
 def setup_one(client_class):
     remove_test_dir()
@@ -147,7 +149,7 @@ def test_insert_one(client_class):
         coll.insert_one()
 
     # kwarg support_alert
-    with pytest.raises(TypeError):
+    with pytest.raises(errors.MongitaError):
         coll.insert_one({'doc': 'doc'}, bypass_document_validation=True)
     assert isinstance(ior, results.InsertOneResult)
     assert isinstance(repr(ior), str)
@@ -412,6 +414,12 @@ def test_cursor(client_class):
 
     # next should would as expected
     doc_cursor = coll.find().sort('name')
+    assert next(doc_cursor)['name'] == 'Honey Badger'
+    assert next(doc_cursor)['name'] == 'Human'
+    assert doc_cursor.next()['name'] == 'Indian grey mongoose'
+
+    # clone should reset
+    doc_cursor = doc_cursor.clone()
     assert next(doc_cursor)['name'] == 'Honey Badger'
     assert next(doc_cursor)['name'] == 'Human'
     assert doc_cursor.next()['name'] == 'Indian grey mongoose'
@@ -963,6 +971,9 @@ def test_indicies_basic(client_class):
         coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index([('key', 2)])
+    with pytest.raises(mongita.errors.PyMongoError):
+        coll.create_index('kingdom', background=True)
+
 
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
@@ -1439,6 +1450,41 @@ def test_immediate_index(client_class):
     client = client_class()
     with pytest.raises(errors.OperationFailure):
         client.a.d.drop_index("hello")
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_read_write_concern(client_class):
+    """ These are mostly dummies """
+    client = client_class()
+    assert isinstance(client.read_concern, read_concern.ReadConcern)
+    assert isinstance(client.write_concern, write_concern.WriteConcern)
+    assert client.read_concern.document == {}
+    assert client.write_concern.document == {}
+
+    coll = client.db.coll
+    assert isinstance(coll.read_concern, read_concern.ReadConcern)
+    assert isinstance(coll.write_concern, write_concern.WriteConcern)
+    assert coll.read_concern.document == {}
+    assert coll.write_concern.document == {}
+
+    with pytest.raises(errors.MongitaNotImplementedError):
+        read_concern.ReadConcern(level="majority")
+    with pytest.raises(errors.MongitaNotImplementedError):
+        write_concern.WriteConcern(w=3)
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_with_options(client_class):
+    """ With option is a dummy for now """
+    client = client_class()
+    coll = client.db.coll
+
+    coll2 = coll.with_options(read_concern=read_concern.ReadConcern())
+    assert coll.name == coll2.name
+    assert coll.database == coll2.database
+
+    with pytest.raises(errors.MongitaNotImplementedError):
+        coll.with_options(codec_options="TEST")
 
 
 def test_close_memory():

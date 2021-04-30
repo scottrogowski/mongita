@@ -11,7 +11,9 @@ from .cursor import Cursor, _validate_sort
 from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
 from .errors import (MongitaError, MongitaNotImplementedError, DuplicateKeyError,
                      InvalidName, OperationFailure)
+from .read_concern import ReadConcern
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
+from .write_concern import WriteConcern
 
 
 _SUPPORTED_FILTER_OPERATORS = ('$in', '$eq', '$gt', '$gte', '$lt', '$lte', '$ne', '$nin')
@@ -578,15 +580,16 @@ class Collection():
                      'estimated_document_count', 'find_one_and_delete',
                      'find_one_and_replace', 'find_one_and_update', 'find_raw_batches',
                      'inline_map_reduce', 'list_indexes', 'map_reduce', 'next',
-                     'options', 'read_concern', 'read_preference', 'rename', 'watch',
-                     'with_options', 'write_concern']
+                     'options', 'read_concern', 'read_preference', 'rename', 'watch', ]
     DEPRECATED = ['reindex', 'parallel_scan', 'initialize_unordered_bulk_op',
                   'initialize_ordered_bulk_op', 'group', 'count', 'insert', 'save',
                   'update', 'remove', 'find_and_modify', 'ensure_index']
 
-    def __init__(self, collection_name, database):
+    def __init__(self, collection_name, database, write_concern=None, read_concern=None):
         self.name = collection_name
         self.database = database
+        self._write_concern = write_concern or WriteConcern()
+        self._read_concern = read_concern or ReadConcern()
         self._engine = database._engine
         self._existence_verified = False
         self._base_location = f'{database.name}.{collection_name}'
@@ -611,9 +614,24 @@ class Collection():
     def full_name(self):
         return self._base_location
 
-    # def _get_location(self, object_id):
-    #     """Given an object_id, return the Location object"""
-    #     return Location(self._base_location, object_id)
+    @property
+    def write_concern(self):
+        return self._write_concern
+
+    @property
+    def read_concern(self):
+        return self._read_concern
+
+    def with_options(self, **kwargs):
+        write_concern = kwargs.pop('write_concern', None)
+        read_concern = kwargs.pop('read_concern', None)
+
+        if kwargs:
+            raise MongitaNotImplementedError("The method 'with_options' doesn't yet "
+                                             "accept %r" % kwargs)
+        return Collection(self.name, self.database,
+                          write_concern=write_concern,
+                          read_concern=read_concern)
 
     def __create(self):
         """
@@ -1079,7 +1097,7 @@ class Collection():
         return metadata
 
     @support_alert
-    def create_index(self, keys):
+    def create_index(self, keys, background=False):
         """
         Create a new index for the collection.
         Indexes can dramatically speed up queries that use its fields.
@@ -1087,8 +1105,12 @@ class Collection():
         Returns the name of the new index.
 
         :param keys str|[(key, direction)]:
+        :param background bool:
         :rtype: str
         """
+        if background is not False:
+            raise MongitaNotImplementedError("background index creation is not supported")
+
         self.__create()
 
         if isinstance(keys, str):

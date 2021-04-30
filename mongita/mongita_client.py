@@ -9,17 +9,31 @@ from .command_cursor import CommandCursor
 from .database import Database
 from .errors import MongitaNotImplementedError, InvalidName
 from .engines import disk_engine, memory_engine
+from .read_concern import ReadConcern
+from .write_concern import WriteConcern
+
 
 DEFAULT_STORAGE_DIR = os.path.join(pathlib.Path.home(), '.mongita')
 
 
 class MongitaClient(abc.ABC):
-    UNIMPLEMENTED = ['HOST', 'PORT', 'address', 'arbiters', 'close', 'close_cursor', 'codec_options', 'database_names', 'event_listeners', 'fsync', 'get_database', 'get_default_database', 'is_locked', 'is_mongos', 'is_primary', 'kill_cursors', 'local_threshold_ms', 'max_bson_size', 'max_idle_time_ms', 'max_message_size', 'max_pool_size', 'max_write_batch_size', 'min_pool_size', 'next', 'nodes', 'primary', 'read_concern', 'read_preference', 'retry_reads', 'retry_writes', 'secondaries', 'server_info', 'server_selection_timeout', 'set_cursor_manager', 'start_session', 'unlock', 'watch', 'write_concern']
+    UNIMPLEMENTED = ['HOST', 'PORT', 'address', 'arbiters', 'close', 'close_cursor',
+                     'codec_options', 'database_names', 'event_listeners', 'fsync',
+                     'get_database', 'get_default_database', 'is_locked',
+                     'is_mongos', 'is_primary', 'kill_cursors',
+                     'local_threshold_ms', 'max_bson_size', 'max_idle_time_ms',
+                     'max_message_size', 'max_pool_size', 'max_write_batch_size',
+                     'min_pool_size', 'next', 'nodes', 'primary',
+                     'read_preference', 'retry_reads', 'retry_writes',
+                     'secondaries', 'server_info', 'server_selection_timeout',
+                     'set_cursor_manager', 'start_session', 'unlock', 'watch']
     __metaclass__ = abc.ABCMeta
 
     def __init__(self):
         self._base_location = ''
         self._cache = {}
+        self._read_concern = ReadConcern()
+        self._write_concern = WriteConcern()
 
     def __getattr__(self, attr):
         if attr in self.UNIMPLEMENTED:
@@ -56,6 +70,14 @@ class MongitaClient(abc.ABC):
             'uuid': str(bson.ObjectId()),
         })
         assert self.engine.put_metadata(self._base_location, metadata)
+
+    @property
+    def read_concern(self):
+        return self._read_concern
+
+    @property
+    def write_concern(self):
+        return self._write_concern
 
     @support_alert
     def close(self):
@@ -121,8 +143,9 @@ class MongitaClientDisk(MongitaClient):
     The MongoClientDisk persists its state on the disk. It is meant to be
     compatible in most ways with pymongo's MongoClient.
     """
-    def __init__(self, bucket=DEFAULT_STORAGE_DIR):
+    def __init__(self, bucket=DEFAULT_STORAGE_DIR, **kwargs):
         self.engine = disk_engine.DiskEngine.create(bucket)
+        self.is_primary = True
         super().__init__()
 
     def __repr__(self):
@@ -136,8 +159,9 @@ class MongitaClientMemory(MongitaClient):
     still thread-safe. It is meant to be compatible in most ways with
     pymongo's MongoClient.
     """
-    def __init__(self, strict=False):
+    def __init__(self, strict=False, **kwargs):
         self.engine = memory_engine.MemoryEngine.create(strict)
+        self.is_primary = True
         super().__init__()
 
     # def __repr__(self):

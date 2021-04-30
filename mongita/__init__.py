@@ -4,6 +4,8 @@ from . import database
 from . import errors
 from . import mongita_client
 from . import results
+from . import read_concern
+from . import write_concern
 
 mongita_client = mongita_client
 MongitaClientMemory = mongita_client.MongitaClientMemory
@@ -14,6 +16,8 @@ collection = collection
 cursor = cursor
 errors = errors
 results = results
+read_concern = read_concern
+write_concern = write_concern
 
 ASCENDING = collection.ASCENDING
 DESCENDING = collection.DESCENDING
