@@ -7,43 +7,41 @@ sys.path.append(os.getcwd().split('/tests')[0])
 
 import mongita
 
-pymongo.MongoClient = mongita.MongitaClientMemory
-
-import mongoengine
+_OriginalMongoClient = pymongo.MongoClient
 
 
-def setup_module():
-    pass
+def setup_function():
+    pymongo.MongoClient = mongita.MongitaClientMemory
 
 
-def teardown_module():
-    mongoengine.disconnect()
-
-
-class User(mongoengine.Document):
-    email = mongoengine.StringField(required=True)
-    first_name = mongoengine.StringField(max_length=50)
-    last_name = mongoengine.StringField(max_length=50)
-
-
-class Post(mongoengine.Document):
-    title = mongoengine.StringField(max_length=120, required=True)
-    author = mongoengine.ReferenceField(User)
-    tags = mongoengine.ListField(mongoengine.StringField(max_length=30))
-    link_url = mongoengine.StringField()
-
-    meta = {
-        'indexes': [
-            'title',
-            'author',
-        ]
-    }
-
-    def __repr__(self):
-        return f"POST: {self.title} by {self.author} tagged {self.tags}"
+def teardown_function():
+    pymongo.MongoClient = _OriginalMongoClient
 
 
 def test_mongoengine():
+    import mongoengine
+
+    class User(mongoengine.Document):
+        email = mongoengine.StringField(required=True)
+        first_name = mongoengine.StringField(max_length=50)
+        last_name = mongoengine.StringField(max_length=50)
+
+    class Post(mongoengine.Document):
+        title = mongoengine.StringField(max_length=120, required=True)
+        author = mongoengine.ReferenceField(User)
+        tags = mongoengine.ListField(mongoengine.StringField(max_length=30))
+        link_url = mongoengine.StringField()
+
+        meta = {
+            'indexes': [
+                'title',
+                'author',
+            ]
+        }
+
+        def __repr__(self):
+            return f"POST: {self.title} by {self.author} tagged {self.tags}"
+
     mongoengine.connect('mongita_test_db')
 
     post1 = Post(title='Fun with MongoEngine')
@@ -63,3 +61,4 @@ def test_mongoengine():
     posts = list(Post.objects().filter(tags='mongodb').all())
     assert len(posts) == 1
     assert posts[0].title == 'Fun with MongoEngine'
+    mongoengine.disconnect()

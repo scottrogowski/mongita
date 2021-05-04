@@ -7,7 +7,7 @@ from .errors import MongitaNotImplementedError, InvalidName
 
 
 class Database():
-    UNIMPLEMENTED = ['aggregate', 'codec_options', 'command', 'create_collection', 'dereference', 'drop_collection', 'get_collection', 'next', 'profiling_info', 'profiling_level', 'read_concern', 'read_preference', 'set_profiling_level', 'validate_collection', 'watch', 'with_options', 'write_concern']
+    UNIMPLEMENTED = ['aggregate', 'codec_options', 'command', 'create_collection', 'dereference', 'get_collection', 'next', 'profiling_info', 'profiling_level', 'read_concern', 'read_preference', 'set_profiling_level', 'validate_collection', 'watch', 'with_options', 'write_concern']
     DEPRECATED = ['add_son_manipulator', 'add_user', 'authenticate', 'collection_names', 'current_op', 'error', 'eval', 'incoming_copying_manipulators', 'incoming_manipulators', 'last_status', 'logout', 'outgoing_copying_manipulators', 'outgoing_manipulators', 'previous_error', 'remove_user', 'reset_error_history', 'system_js', 'SystemJS']
 
     def __init__(self, db_name, client):
@@ -98,13 +98,13 @@ class Database():
             collection = name_or_collection.name
         else:
             collection = name_or_collection
-
         self._engine.delete_dir(f'{self.name}.{collection}')
         metadata = self._engine.get_metadata(self._base_location)
         if metadata and collection in metadata['collection_names']:
             metadata['collection_names'].remove(collection)
             assert self._engine.put_metadata(self._base_location, metadata)
         try:
+            self._cache[collection]._existence_verified = False
             del self._cache[collection]
         except KeyError:
             pass

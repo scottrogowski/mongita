@@ -31,6 +31,7 @@ setuptools.setup(
     url=url_base,
     download_url=download_url,
     packages=setuptools.find_packages(),
+    scripts=["scripts/mongitasync"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: BSD License",

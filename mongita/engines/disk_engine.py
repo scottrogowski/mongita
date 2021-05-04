@@ -92,6 +92,7 @@ class DiskEngine(Engine):
         fh.seek(pos)
         doc_len_bytes = fh.read(4)
         doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
+        assert doc_len
         doc = bson.decode(doc_len_bytes + fh.read(doc_len - 4))
         self._cache[itrn(collection)][itrn(doc_id)] = doc
         return doc
@@ -108,7 +109,9 @@ class DiskEngine(Engine):
         if pos is not None:
             fh.seek(pos)
             doc_len_bytes = fh.read(4)
-            spare_bytes = int.from_bytes(doc_len_bytes, 'little', signed=True) - len(encoded_doc)
+            doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
+            assert doc_len
+            spare_bytes = doc_len - len(encoded_doc)
             if spare_bytes >= 0:
                 fh.seek(pos)
                 fh.write(encoded_doc + b'\x00' * spare_bytes)
@@ -131,6 +134,7 @@ class DiskEngine(Engine):
         fh.seek(pos)
         doc_len_bytes = fh.read(4)
         doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
+        assert doc_len
         fh.seek(pos)
         fh.write(b'\x00' * doc_len)
         fh.flush()
@@ -192,6 +196,7 @@ class DiskEngine(Engine):
                 fh.seek(pos)
                 doc_len_bytes = fh.read(4)
                 doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
+                assert doc_len
                 encoded_docs[doc_id] = doc_len_bytes + fh.read(doc_len - 4)
 
         pos = 0
@@ -207,7 +212,6 @@ class DiskEngine(Engine):
         metadata_path = self._get_full_path(collection, '$.metadata')
         with open(metadata_path, 'wb') as f:
             f.write(metadata.to_storage(as_bson=True))
-            f.flush()
         file_attrs_path = self._get_full_path(collection, '$.file_attrs')
         if self._file_attrs.get(collection, {}).get('spare_bytes', 0) / \
            (1 + self._file_attrs.get(collection, {}).get('total_bytes', 0)) > 0.5:
@@ -216,7 +220,6 @@ class DiskEngine(Engine):
             f.write(bson.encode(self._file_attrs.get(collection, {'total_bytes': 0,
                                                                   'spare_bytes': 0,
                                                                   'loc_idx': {}})))
-            f.flush()
         return True
 
     def delete_dir(self, collection):
@@ -227,6 +230,9 @@ class DiskEngine(Engine):
         self._cache.pop(collection, None)
         self._metadata.pop(collection, None)
         self._file_attrs.pop(collection, None)
+        if collection in self._collection_fhs:
+            self._collection_fhs[collection].close()
+            self._collection_fhs.pop(collection, None)
         return True
 
     def list_ids(self, collection, limit=None):

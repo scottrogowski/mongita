@@ -6,6 +6,7 @@ from . import mongita_client
 from . import results
 from . import read_concern
 from . import write_concern
+from . import mongitasync
 
 mongita_client = mongita_client
 MongitaClientMemory = mongita_client.MongitaClientMemory
@@ -18,6 +19,7 @@ errors = errors
 results = results
 read_concern = read_concern
 write_concern = write_concern
+mongitasync = mongitasync.mongitasync
 
 ASCENDING = collection.ASCENDING
 DESCENDING = collection.DESCENDING

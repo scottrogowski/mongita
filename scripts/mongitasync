@@ -1,0 +1,44 @@
+#!/usr/bin/env python
+
+import argparse
+
+from mongita import mongitasync
+
+
+DESCRIPTION = """Sync data between mongodb and mongita clients.
+
+The optional URIs can be one of two schemes:
+- Traditional MongoDB URI: "mongodb://[username:password@]host1[:port1][/[defaultauthdb][?options]]"
+- File URI for MongitaClientDisk: "file://[path-to-database-directory]"
+"""
+
+CONNECTION_TYPES = ('mongita', 'mongodb')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=DESCRIPTION,
+                                     formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument(
+        'source', choices=CONNECTION_TYPES,
+        help="Either 'mongita' or 'mongodb'")
+    parser.add_argument(
+        'destination', choices=CONNECTION_TYPES,
+        help="Either 'mongita' or 'mongodb'")
+    parser.add_argument(
+        'collections',
+        help="Comma delimited list of collections to transfer in "
+             "'database.collection' format. To sync entire databases, "
+             "simply omit the collection after the dot.")
+    parser.add_argument(
+        '--source-uri',
+        help='Complete URI of the source client (optional)')
+    parser.add_argument(
+        '--destination-uri',
+        help='Complete URI of the source client (optional)')
+    parser.add_argument(
+        '--force', action='store_true',
+        help="Skip asking for confirmation.")
+    args = parser.parse_args()
+    collections = args.collections.split(',')
+    mongitasync(args.source, args.destination, collections, args.force,
+                args.source_uri, args.destination_uri)

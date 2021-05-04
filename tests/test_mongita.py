@@ -8,6 +8,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 
 import bson
+import pymongo
 import pytest
 
 sys.path.append(os.getcwd().split('/tests')[0])
@@ -15,7 +16,7 @@ sys.path.append(os.getcwd().split('/tests')[0])
 import mongita
 from mongita import (MongitaClientMemory, MongitaClientDisk, ASCENDING, DESCENDING,
                      errors, results, cursor, collection, command_cursor, database,
-                     engines, read_concern, write_concern)
+                     engines, read_concern, write_concern, mongitasync)
 random.seed(42)
 
 TEST_DOCS = [
@@ -118,6 +119,10 @@ CLIENTS = (MongitaClientMemory, _MongitaClientDisk)
 def remove_test_dir():
     if os.path.exists(TEST_DIR):
         shutil.rmtree(TEST_DIR)
+
+
+def clear_pymongo():
+    pymongo.MongoClient().drop_database('mongita_test')
 
 
 def setup_one(client_class):
@@ -934,6 +939,84 @@ def test_not_real_drops(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
+def test_drop_and_add(client_class):
+    client, coll, imr = setup_many(client_class)
+    client.db.drop_collection('snake_hunter')
+    assert client['db']['snake_hunter'].count_documents({}) == 0
+    assert coll.count_documents({}) == 0
+    coll.insert_one({'hello': 'world'})
+    assert coll.count_documents({}) == 1
+    client.db.drop_collection('snake_hunter')
+    assert coll.count_documents({}) == 0
+    client.db.snake_hunter.insert_one({'hello': 'world'})
+    assert coll.count_documents({}) == 1
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_drop_and_add_database(client_class):
+    client, coll, imr = setup_many(client_class)
+    client.drop_database('db')
+    assert client.db.snake_hunter.count_documents({}) == 0
+    coll.insert_one({'hello': 'world'})
+    assert coll.count_documents({}) == 1
+    client.drop_database('db')
+    assert coll.count_documents({}) == 0
+    client.db.snake_hunter.insert_one({'hello': 'world'})
+    assert coll.count_documents({}) == 1
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_drop_and_add_database_collection(client_class):
+    client, coll, imr = setup_many(client_class)
+    client.drop_database('db')
+    client.db.drop_collection('snake_hunter')
+    assert client.db.snake_hunter.count_documents({}) == 0
+    coll.insert_one({'hello': 'world'})
+    assert coll.count_documents({}) == 1
+    client.drop_database('db')
+    client.db.drop_collection('snake_hunter')
+    assert coll.count_documents({}) == 0
+    client.db.snake_hunter.insert_one({'hello': 'world'})
+    assert coll.count_documents({}) == 1
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_drop_bug(client_class):
+    client, _, _ = setup_many(client_class)
+    database = 'ffer'
+    collection = 'visits'
+    client.drop_database(database)
+    dest_coll = client[database][collection]
+    assert dest_coll.count_documents({}) == 0
+    client[database].drop_collection(collection)
+    dest_coll.insert_many([{'1': '2'}, {'3': '4'}])
+    dest_coll.insert_many([{'5': '6'}, {'7': '8'}])
+
+    collection = 'prices'
+    dest_coll = client[database][collection]
+    assert dest_coll.count_documents({}) == 0
+    client[database].drop_collection(collection)
+    dest_coll.insert_many([{'1': '2'}, {'3': '4'}])
+    dest_coll.insert_many([{'5': '6'}, {'7': '8'}])
+
+
+def test_every_other_drop_bug():
+    client = _MongitaClientDisk()
+    client.db.snake_hunter_1.insert_many(TEST_DOCS)
+    client.db.snake_hunter_2.insert_many(TEST_DOCS)
+    client.db.snake_hunter_3.insert_many(TEST_DOCS)
+    client.db.snake_hunter_4.insert_many(TEST_DOCS)
+    client.db.snake_hunter_5.insert_many(TEST_DOCS)
+    client.drop_database('db')
+    client = _MongitaClientDisk()
+    assert client.db.snake_hunter_1.count_documents({}) == 0
+    assert client.db.snake_hunter_2.count_documents({}) == 0
+    assert client.db.snake_hunter_3.count_documents({}) == 0
+    assert client.db.snake_hunter_4.count_documents({}) == 0
+    assert client.db.snake_hunter_5.count_documents({}) == 0
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
 def test_list_dbs_collections(client_class):
     remove_test_dir()
     client = client_class()
@@ -1549,6 +1632,7 @@ def test_close_disk():
     assert not client.engine._cache
     client = _MongitaClientDisk()
     assert not client.engine._cache
+    assert client.db.list_collection_names() == ['snake_hunter']
     assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS
     assert client.engine._cache
     assert set(coll.distinct('name')) == set(d['name'] for d in TEST_DOCS)
@@ -1660,6 +1744,59 @@ def test_two_connections_disk():
     client2 = _MongitaClientDisk()
     assert client1.engine is client2.engine
     assert client2.db.snake_hunter.count_documents({}) == 1
+
+
+def test_sync_basic(monkeypatch):
+    clear_pymongo()
+    with pytest.raises(AssertionError):
+        mongitasync('mongita', 'mongodb', [])
+
+    mongita_client = _MongitaClientDisk()
+    mongita_client.mongita_test.snake_hunter.insert_many(TEST_DOCS)
+    assert mongita_client['mongita_test'].list_collection_names() == ['snake_hunter']
+    assert mongita_client['mongita_test']['snake_hunter'].count_documents({}) == LEN_TEST_DOCS
+    mongitasync('mongita', 'mongodb', 'mongita_test', source_uri=TEST_DIR, force=True)
+    mongodb_client = pymongo.MongoClient()
+    assert mongodb_client.mongita_test.snake_hunter.count_documents({}) == LEN_TEST_DOCS
+    assert set(d['name'] for d in mongodb_client.mongita_test.snake_hunter.find({})) \
+        == set(d['name'] for d in TEST_DOCS)
+
+    monkeypatch.setattr('builtins.input', lambda : "y")
+    mongita_client.mongita_test.snake_hunter_2.insert_many(TEST_DOCS)
+    mongitasync('mongita', 'mongodb', 'mongita_test.snake_hunter_2', source_uri=TEST_DIR)
+    assert mongodb_client.mongita_test.snake_hunter_2.count_documents({}) == LEN_TEST_DOCS
+    assert set(d['name'] for d in mongodb_client.mongita_test.snake_hunter_2.find({})) \
+        == set(d['name'] for d in TEST_DOCS)
+
+    # dont drop database
+    monkeypatch.setattr('builtins.input', lambda: "n")
+    mongita_client.mongita_test.snake_hunter_3.insert_many(TEST_DOCS)
+    mongitasync('mongita', 'mongodb', 'mongita_test', source_uri=TEST_DIR)
+    assert mongodb_client.mongita_test.snake_hunter_3.count_documents({}) == 0
+    assert mongodb_client.mongita_test.snake_hunter_2.count_documents({}) == LEN_TEST_DOCS
+
+    # do drop database
+    monkeypatch.setattr('builtins.input', lambda: "yesall")
+    mongita_client.drop_database('mongita_test')
+    mongita_client.mongita_test.snake_hunter_3.insert_many(TEST_DOCS)
+    mongitasync('mongita', 'mongodb', 'mongita_test', source_uri=TEST_DIR)
+    assert mongodb_client.mongita_test.snake_hunter_3.count_documents({}) == LEN_TEST_DOCS
+    assert mongodb_client.mongita_test.snake_hunter_2.count_documents({}) == 0
+
+    # > 1000 documents
+    mongita_client.mongita_test.drop_collection('snake_hunter_3')
+    mongita_client.mongita_test.snake_hunter_3.insert_many(TEST_DOCS * 150)
+    mongitasync('mongita', 'mongodb', 'mongita_test', source_uri=TEST_DIR)
+    assert mongodb_client.mongita_test.snake_hunter_3.count_documents({}) == LEN_TEST_DOCS * 150
+
+    # other direction. Two collections
+    mongita_client.drop_database('mongita_test')
+    mongodb_client.mongita_test.snake_hunter_2.insert_many(TEST_DOCS)
+    mongitasync('mongodb', 'mongita', ['mongita_test.snake_hunter_2',
+                                       'mongita_test.snake_hunter_3'],
+                source_uri='mongodb://localhost:27017', destination_uri=TEST_DIR)
+    assert mongita_client.mongita_test.snake_hunter_2.count_documents({}) == LEN_TEST_DOCS
+    assert mongita_client.mongita_test.snake_hunter_3.count_documents({}) == LEN_TEST_DOCS * 150
 
 
 

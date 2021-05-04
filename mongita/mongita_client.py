@@ -128,7 +128,7 @@ class MongitaClient(abc.ABC):
             db_name = name_or_database
 
         db = self[db_name]
-        for coll in db.list_collection_names():
+        for coll in list(db.list_collection_names()):
             db.drop_collection(coll)
         metadata = self.engine.get_metadata(self._base_location)
         if metadata and db_name in metadata['database_names']:
@@ -143,7 +143,8 @@ class MongitaClientDisk(MongitaClient):
     The MongoClientDisk persists its state on the disk. It is meant to be
     compatible in most ways with pymongo's MongoClient.
     """
-    def __init__(self, bucket=DEFAULT_STORAGE_DIR, **kwargs):
+    def __init__(self, bucket, **kwargs):
+        bucket = bucket or DEFAULT_STORAGE_DIR
         self.engine = disk_engine.DiskEngine.create(bucket)
         self.is_primary = True
         super().__init__()
@@ -164,6 +165,5 @@ class MongitaClientMemory(MongitaClient):
         self.is_primary = True
         super().__init__()
 
-    # def __repr__(self):
-    #     pid = multiprocessing.current_process().pid
-    #     return "MongitaClientMemory(pid=%s)" % pid
+    def __repr__(self):
+        return "MongitaClientMemory()"
