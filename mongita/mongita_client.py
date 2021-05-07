@@ -143,9 +143,9 @@ class MongitaClientDisk(MongitaClient):
     The MongoClientDisk persists its state on the disk. It is meant to be
     compatible in most ways with pymongo's MongoClient.
     """
-    def __init__(self, bucket, **kwargs):
-        bucket = bucket or DEFAULT_STORAGE_DIR
-        self.engine = disk_engine.DiskEngine.create(bucket)
+    def __init__(self, host=DEFAULT_STORAGE_DIR, **kwargs):
+        host = host or DEFAULT_STORAGE_DIR
+        self.engine = disk_engine.DiskEngine.create(host)
         self.is_primary = True
         super().__init__()
 
@@ -160,7 +160,7 @@ class MongitaClientMemory(MongitaClient):
     still thread-safe. It is meant to be compatible in most ways with
     pymongo's MongoClient.
     """
-    def __init__(self, strict=False, **kwargs):
+    def __init__(self, host=':memory:', strict=False, **kwargs):
         self.engine = memory_engine.MemoryEngine.create(strict)
         self.is_primary = True
         super().__init__()
