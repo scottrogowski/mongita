@@ -27,27 +27,31 @@ Mongita is in active development. Please report any bugs. Mongita is free and op
 
 ### Installation
 
-    pip3 install mongita
+```bash
+pip3 install mongita
+```
 
 ###  Hello world
 
-    >>> from mongita import MongitaClientDisk
-    >>> client = MongitaClientDisk()
-    >>> hello_world_db = client.hello_world_db
-    >>> mongoose_collection = hello_world_db.mongoose_collection
-    >>> mongoose_collection.insert_many([{'name': 'Meercat', 'does_not_eat': 'Snakes'},
-                                         {'name': 'Yellow mongoose', 'eats': 'Termites'}])
-    <mongita.results.InsertManyResult object at 0x000000000>
-    >>> mongoose_collection.count_documents({})
-    2
-    >>> mongoose_collection.update_one({'name': 'Meercat'}, {'$set': {"weight": 2}})
-    <mongita.results.UpdateResult object at 00000000000>
-    >>> mongoose_collection.find({'weight': {'$gt': 1}})
-    <mongita.cursor.Cursor object at 00000000000>
-    >>> list(mongoose_collection.find({'weight': {'$gt': 1}}))
-    [{'_id': 'a1b2c3d4e5f6', 'name': 'Meercat', 'does_not_eat': 'Snakes', 'weight': 2}]
-    >>> mongoose_collection.delete_one({'name': 'Meercat'})
-    <mongita.results.DeleteResult object at 00000000000>
+```python
+>>> from mongita import MongitaClientDisk
+>>> client = MongitaClientDisk()
+>>> hello_world_db = client.hello_world_db
+>>> mongoose_collection = hello_world_db.mongoose_collection
+>>> mongoose_collection.insert_many([{'name': 'Meercat', 'does_not_eat': 'Snakes'},
+                                     {'name': 'Yellow mongoose', 'eats': 'Termites'}])
+<mongita.results.InsertManyResult object at 0x000000000>
+>>> mongoose_collection.count_documents({})
+2
+>>> mongoose_collection.update_one({'name': 'Meercat'}, {'$set': {"weight": 2}})
+<mongita.results.UpdateResult object at 00000000000>
+>>> mongoose_collection.find({'weight': {'$gt': 1}})
+<mongita.cursor.Cursor object at 00000000000>
+>>> list(mongoose_collection.find({'weight': {'$gt': 1}}))
+[{'_id': 'a1b2c3d4e5f6', 'name': 'Meercat', 'does_not_eat': 'Snakes', 'weight': 2}]
+>>> mongoose_collection.delete_one({'name': 'Meercat'})
+<mongita.results.DeleteResult object at 00000000000>
+```
 
 ### Performance
 
@@ -62,63 +66,76 @@ Refer to the [PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/index.h
 
 **mongita.MongitaClientMemory / mongita.MongitaClientDisk** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/mongo_client.html))
 
-    mongita.MongitaClient.close()
-    mongita.MongitaClient.list_database_names()
-    mongita.MongitaClient.list_databases()
-    mongita.MongitaClient.drop_database(name_or_database)
-
+```python
+mongita.MongitaClient.close()
+mongita.MongitaClient.list_database_names()
+mongita.MongitaClient.list_databases()
+mongita.MongitaClient.drop_database(name_or_database)
+```
 
 **Database** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/database.html))
 
-    mongita.Database.list_collection_names()
-    mongita.Database.list_collections()
-    mongita.Database.drop_collection(name_or_collection)
+```python
+mongita.Database.list_collection_names()
+mongita.Database.list_collections()
+mongita.Database.drop_collection(name_or_collection)
+```
 
 **Collection** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/collection.html))
 
-    mongita.Collection.insert_one(document)
-    mongita.Collection.insert_many(documents, ordered=True)
-    mongita.Collection.find_one(filter, sort)
-    mongita.Collection.find(filter, sort, limit)
-    mongita.Collection.replace_one(filter, replacement, upsert=False)
-    mongita.Collection.update_one(filter, update)
-    mongita.Collection.update_many(filter, update)
-    mongita.Collection.delete_one(filter)
-    mongita.Collection.delete_many(filter)
-    mongita.Collection.count_documents(filter)
-    mongita.Collection.distinct(key, filter)
-    mongita.Collection.create_index(keys)
-    mongita.Collection.drop_index(index_or_name)
-    mongita.Collection.index_information()
+```python
+mongita.Collection.insert_one(document)
+mongita.Collection.insert_many(documents, ordered=True)
+mongita.Collection.find_one(filter, sort)
+mongita.Collection.find(filter, sort, limit)
+mongita.Collection.replace_one(filter, replacement, upsert=False)
+mongita.Collection.update_one(filter, update)
+mongita.Collection.update_many(filter, update)
+mongita.Collection.delete_one(filter)
+mongita.Collection.delete_many(filter)
+mongita.Collection.count_documents(filter)
+mongita.Collection.distinct(key, filter)
+mongita.Collection.create_index(keys)
+mongita.Collection.drop_index(index_or_name)
+mongita.Collection.index_information()
+```
 
 **Cursor** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/cursor.html))
 
-    mongita.Cursor.sort(key_or_list, direction=None)
-    mongita.Cursor.next()
-    mongita.Cursor.limit(limit)
-    mongita.Cursor.clone()
-    mongita.Cursor.close()
+```python
+mongita.Cursor.sort(key_or_list, direction=None)
+mongita.Cursor.next()
+mongita.Cursor.limit(limit)
+mongita.Cursor.clone()
+mongita.Cursor.close()
+```
 
 **CommandCursor** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/command_cursor.html))
 
-    mongita.CommandCursor.next()
-    mongita.CommandCursor.close()
+```python
+mongita.CommandCursor.next()
+mongita.CommandCursor.close()
+```
 
 **errors** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/errors.html))
-    
-    mongita.errors.MongitaError (parent class of all errors)
-    mongita.errors.PyMongoError (alias of MongitaError)
-    mongita.errors.InvalidOperation
-    mongita.errors.OperationFailure
-    mongita.errors.DuplicateKeyError
-    mongita.errors.MongitaNotImplementedError
+
+```python
+mongita.errors.MongitaError (parent class of all errors)
+mongita.errors.PyMongoError (alias of MongitaError)
+mongita.errors.InvalidOperation
+mongita.errors.OperationFailure
+mongita.errors.DuplicateKeyError
+mongita.errors.MongitaNotImplementedError
+```
 
 **results** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/results.html))
 
-    mongita.results.InsertOneResult
-    mongita.results.InsertManyResult
-    mongita.results.UpdateResult
-    mongita.results.DeleteResult
+```python
+mongita.results.InsertOneResult
+mongita.results.InsertManyResult
+mongita.results.UpdateResult
+mongita.results.DeleteResult
+```
 
 **Currently implemented query operators**
 
