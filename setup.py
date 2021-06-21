@@ -37,7 +37,7 @@ setuptools.setup(
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.6',
+    python_requires='>=3.7',
     install_requires=[
         'pymongo>=3.0,<4.0',
         'sortedcontainers>=2.3,<3.0'

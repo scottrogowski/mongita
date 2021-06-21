@@ -1,5 +1,17 @@
 # Mongita CHANGELOG
 
+## [1.0.1] - 2021-06-21
+Mongita was not actually compatible with Python 3.6. Bumped python_requires to 3.7. No other changes.
+
+## [1.0.0] - 2021-05-07
+Version bump to 1.0.0. Despite apparent usage, no major bugs have been reported. The public API should not experience breaking changes moving forward so 1.0.0 seems appropriate.
+### Added
+- mongitasync command
+
+### Fixed
+- Drop database was only dropping every other collection
+
+
 ## [0.2.0] - 2021-04-29
 ### Added
 - Add clone to cursor
