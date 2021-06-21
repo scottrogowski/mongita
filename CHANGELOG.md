@@ -1,7 +1,7 @@
 # Mongita CHANGELOG
 
 ## [1.0.1] - 2021-06-21
-Mongita was not actually compatible with Python 3.6. Bumped python_requires to 3.7. No other changes.
+Mongita was not actually compatible with Python 3.6. Bumped python_requires to 3.7. No other consequential changes.
 
 ## [1.0.0] - 2021-05-07
 Version bump to 1.0.0. Despite apparent usage, no major bugs have been reported. The public API should not experience breaking changes moving forward so 1.0.0 seems appropriate.
