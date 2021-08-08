@@ -154,7 +154,7 @@ mongita.results.DeleteResult
     $inc
 
 #### Customize storage location
-By default, Mongita uses ~/.mongita folder as the storage location. To change it, pass `host` when initializing MongitaClientDisk `client = MongitaClientDisk(host=<db_path>)`
+By default, Mongita uses ~/.mongita as the storage location. To change it, pass `host` when initializing MongitaClientDisk `client = MongitaClientDisk(host=<db_path>)`
 
 ### Contributing
 
