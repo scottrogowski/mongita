@@ -73,6 +73,8 @@ mongita.MongitaClient.list_databases()
 mongita.MongitaClient.drop_database(name_or_database)
 ```
 
+Note: By default, MongitaClientDisk stores its data in ~/.mongita. To use a different directory, pass `host` when initializing `client = MongitaClientDisk(host=<db_path>)`.
+
 **Database** ([PyMongo docs](https://pymongo.readthedocs.io/en/stable/api/pymongo/database.html))
 
 ```python
@@ -152,7 +154,6 @@ mongita.results.DeleteResult
 
     $set
     $inc
-
 
 ### Contributing
 
