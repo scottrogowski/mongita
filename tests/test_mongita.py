@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime, date
 import functools
 from numbers import Number
@@ -633,6 +634,24 @@ def test_update_many(client_class):
                           {'$inc': {'weight': 1}})
     assert set(d.get('weight') for d in coll.find({})) == \
            set(d['weight'] + 1 if isinstance(d.get('weight'), Number) and d.get('weight') < 4 else d.get('weight') for d in TEST_DOCS)
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_push_update(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    array_field = "continents"
+    push_value = "foobar"
+    array_initial = copy.copy(coll.find_one({})[array_field])
+
+    coll.update_one({}, {"$push": {array_field: push_value}})
+
+    array_final = coll.find_one({})[array_field]
+
+    print(f'  initial\n{array_initial}\n')
+    print(f'  final\n{array_final}')
+    assert len(array_final) == len(array_initial) + 1
+    assert array_final == [*array_initial, push_value] 
+
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
