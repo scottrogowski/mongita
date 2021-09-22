@@ -17,7 +17,7 @@ from .write_concern import WriteConcern
 
 
 _SUPPORTED_FILTER_OPERATORS = ('$in', '$eq', '$gt', '$gte', '$lt', '$lte', '$ne', '$nin')
-_SUPPORTED_UPDATE_OPERATORS = ('$set', '$inc')
+_SUPPORTED_UPDATE_OPERATORS = ('$set', '$inc', '$push')
 _DEFAULT_METADATA = {
     'options': {},
     'indexes': {},
@@ -324,6 +324,8 @@ def _set_item_in_doc(update_op, update_op_dict, doc):
             ds[last_key] = value
         elif update_op == '$inc':
             ds[last_key] += value
+        elif update_op == '$push':
+            ds[last_key].append(value)
         # Should never get an update key we don't recognize b/c _validate_update
 
 
