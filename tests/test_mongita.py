@@ -1,4 +1,3 @@
-import copy
 from datetime import datetime, date
 import functools
 from numbers import Number
@@ -635,23 +634,70 @@ def test_update_many(client_class):
     assert set(d.get('weight') for d in coll.find({})) == \
            set(d['weight'] + 1 if isinstance(d.get('weight'), Number) and d.get('weight') < 4 else d.get('weight') for d in TEST_DOCS)
 
+
 @pytest.mark.parametrize("client_class", CLIENTS)
-def test_push_update(client_class):
+def test_push(client_class):
+    client, coll, imr = setup_many(client_class)
+    assert len(coll.find_one({"name": "Meercat"})["continents"]) == 1
+    coll.update_one({"name": "Meercat"}, {"$push": {"continents": "foobar"}})
+    new_meercat_continents = coll.find_one({"name": "Meercat"})["continents"]
+    assert len(new_meercat_continents) == 2
+    assert set(new_meercat_continents) == {"foobar", "AF"}
+
+    coll.update_one({"name": "Meercat"}, {"$push": {"nicknames": "slayer"}})
+    meercat_nicknames = coll.find_one({"name": "Meercat"})["nicknames"]
+    assert type(meercat_nicknames) == list
+    assert len(meercat_nicknames) == 1
+    assert set(meercat_nicknames) == {'slayer'}
+
+    coll.update_one({"name": "Meercat"}, {"$push": {"nicknames": "murderhouse"}})
+    meercat_nicknames = coll.find_one({"name": "Meercat"})["nicknames"]
+    assert type(meercat_nicknames) == list
+    assert set(meercat_nicknames) == {'slayer', 'murderhouse'}
+
+    with pytest.raises(errors.MongitaError):
+        coll.update_one({"name": "Meercat"}, {"$push": {"name": "murderhouse"}})
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_no_leak_push(client_class):
+    # adresses leak found in by https://github.com/scottrogowski/mongita/pull/16
+    def insert_many():
+        client, coll, imr = setup_many(client_class)
+        return coll
+
+    def insert_one():
+        client, coll, imr = setup_one(client_class)
+        return coll
+
+    def replace_one():
+        client, coll, imr = setup_many(client_class)
+        coll.replace_one({"name": "Meercat"}, coll.find_one({"name": "Human"}))
+        return coll
+
+    for new_doc_gen in (insert_many, insert_one, replace_one):
+        coll = new_doc_gen()
+        array_field = "continents"
+        push_value = "foobar"
+        array_initial = coll.find_one({})[array_field]
+
+        coll.update_one({}, {"$push": {array_field: push_value}})
+
+        array_final = coll.find_one({})[array_field]
+
+        assert len(array_final) == len(array_initial) + 1
+        assert array_final == [*array_initial, push_value]
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_inc_non_num(client_class):
     client, coll, imr = setup_many(client_class)
 
-    array_field = "continents"
-    push_value = "foobar"
-    array_initial = copy.copy(coll.find_one({})[array_field])
+    with pytest.raises(errors.MongitaError):
+        coll.update_one({}, {"$inc": {"name": 10}})
 
-    coll.update_one({}, {"$push": {array_field: push_value}})
-
-    array_final = coll.find_one({})[array_field]
-
-    print(f'  initial\n{array_initial}\n')
-    print(f'  final\n{array_final}')
-    assert len(array_final) == len(array_initial) + 1
-    assert array_final == [*array_initial, push_value] 
-
+    with pytest.raises(errors.MongitaError):
+        coll.update_one({}, {"$inc": {"weight": "10"}})
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1076,7 +1122,6 @@ def test_indicies_basic(client_class):
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index('kingdom', background=True)
 
-
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
     assert len(coll.index_information()) == 2
@@ -1230,6 +1275,7 @@ def test_thread_safe_io(client_class):
         assert client.db.snake_hunter.find_one({'i': i})
     assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS * 8
     assert client.db.snake_hunter.count_documents({'name': 'Human'}) == 8
+
 
 def flatten(list_of_lists):
     return [y for x in list_of_lists for y in x]
@@ -1780,7 +1826,7 @@ def test_sync_basic(monkeypatch):
     assert set(d['name'] for d in mongodb_client.mongita_test.snake_hunter.find({})) \
         == set(d['name'] for d in TEST_DOCS)
 
-    monkeypatch.setattr('builtins.input', lambda : "y")
+    monkeypatch.setattr('builtins.input', lambda: "y")
     mongita_client.mongita_test.snake_hunter_2.insert_many(TEST_DOCS)
     mongitasync('mongita', 'mongodb', 'mongita_test.snake_hunter_2', source_uri=TEST_DIR)
     assert mongodb_client.mongita_test.snake_hunter_2.count_documents({}) == LEN_TEST_DOCS
@@ -1816,6 +1862,3 @@ def test_sync_basic(monkeypatch):
                 source_uri='mongodb://localhost:27017', destination_uri=TEST_DIR)
     assert mongita_client.mongita_test.snake_hunter_2.count_documents({}) == LEN_TEST_DOCS
     assert mongita_client.mongita_test.snake_hunter_3.count_documents({}) == LEN_TEST_DOCS * 150
-
-
-
