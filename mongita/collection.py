@@ -788,7 +788,7 @@ class Collection():
             if doc:
                 return dict(doc)
 
-    def __find_ids(self, filter, sort=None, limit=None, metadata=None):
+    def __find_ids(self, filter, sort=None, limit=None, skip=None, metadata=None):
         """
         Given a filter, find all doc_ids that match this filter.
         Be sure to also sort and limit them.
@@ -799,6 +799,7 @@ class Collection():
         :param filter dict:
         :param sort list[(key, direction)]|None:
         :param limit int|None:
+        :param skip int|None:
         :param metadata dict|None:
         :rtype: Generator(list[str])
         """
@@ -827,6 +828,10 @@ class Collection():
                 if _doc_matches_slow_filters(doc, slow_filters):
                     docs_to_return.append(doc)
             _sort_docs(docs_to_return, sort)
+
+            if skip:
+                docs_to_return = docs_to_return[skip:]
+
             if limit is None:
                 for doc in docs_to_return:
                     yield doc['_id']
@@ -838,6 +843,9 @@ class Collection():
                     if i == limit:
                         return
             return
+
+        if skip:
+            doc_ids = doc_ids[skip:]
 
         if limit is None:
             for doc_id in doc_ids:
@@ -855,7 +863,7 @@ class Collection():
                 if i == limit:
                     return
 
-    def __find(self, filter, sort=None, limit=None, metadata=None):
+    def __find(self, filter, sort=None, limit=None, skip=None, metadata=None):
         """
         Given a filter, find all docs that match this filter.
         This method returns a generator.
@@ -863,11 +871,12 @@ class Collection():
         :param filter dict:
         :param sort list[(key, direction)]|None:
         :param limit int|None:
+        :param skip int|None:
         :param metadata dict|None:
         :rtype: Generator(list[dict])
         """
 
-        for doc_id in self.__find_ids(filter, sort, limit, metadata=metadata):
+        for doc_id in self.__find_ids(filter, sort, limit, skip, metadata=metadata):
             doc = self._engine.get_doc(self.full_name, doc_id)
             yield dict(doc)
 
@@ -889,7 +898,7 @@ class Collection():
         return self.__find_one(filter, sort)
 
     @support_alert
-    def find(self, filter=None, sort=None, limit=None):
+    def find(self, filter=None, sort=None, limit=None, skip=None):
         """
         Return a cursor of all matching documents.
 
@@ -908,7 +917,13 @@ class Collection():
         if limit is not None and not isinstance(limit, int):
             raise TypeError('Limit must be an integer')
 
-        return Cursor(self.__find, filter, sort, limit)
+        if skip is not None:
+            if not isinstance(skip, int):
+                raise TypeError('Skip must be an integer')
+            if skip < 0:
+                raise ValueError('Skip must be >=0')
+
+        return Cursor(self.__find, filter, sort, limit, skip)
 
     def __update_doc(self, doc_id, update):
         """
