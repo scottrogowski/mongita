@@ -541,6 +541,36 @@ def test_filters(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
+def test_in_filter(client_class):
+    # # From https://github.com/scottrogowski/mongita/issues/18
+
+    for i in range(2):
+        client, coll, imr = setup_many(client_class)
+        if i:
+            coll.create_index("kingdom")
+            coll.create_index("continents")
+
+        assert coll.count_documents({'kingdom': {'$in': ['reptile', 'bird']}}) == 2
+        assert coll.count_documents({'kingdom': {'$nin': ['reptile', 'bird']}}) == LEN_TEST_DOCS - 2
+
+        assert coll.count_documents({'continents': {'$in': ['EA', 'AF']}}) == \
+            coll.count_documents({'continents': {'$ne': None}})
+        assert set(d['name'] for d in coll.find({'continents': {'$in': ['NA', 'AF']}})) == \
+            {'Meercat', 'Honey Badger', 'Secretarybird', 'Human'}
+        assert set(d['name'] for d in coll.find({'continents': {'$in': ['SA']}})) == \
+            {'Human'}
+        assert coll.count_documents({'continents': {'$in': []}}) == 0
+
+        assert coll.count_documents({'continents': {'$nin': ['EA', 'AF']}}) == 2
+        assert coll.count_documents({'continents': {'$nin': ['NA', 'SA']}}) == LEN_TEST_DOCS - 1
+        assert set(d['name'] for d in coll.find({'continents': {'$nin': ['NA', 'AF']}})) == \
+            {'Indian grey mongoose', 'King Cobra', 'Placeholder', 'Placeholder2'}
+        assert coll.count_documents({'continents': {'$nin': ['SA']}}) == LEN_TEST_DOCS - 1
+        assert coll.count_documents({'continents': {'$nin': ['ABC']}}) == LEN_TEST_DOCS
+        assert coll.count_documents({'continents': {'$nin': []}}) == LEN_TEST_DOCS
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
 def test_update_one(client_class):
     client, coll, imr = setup_many(client_class)
     with pytest.raises(errors.PyMongoError):
@@ -1057,7 +1087,6 @@ def test_indicies_basic(client_class):
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index('kingdom', background=True)
 
-
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
     assert len(coll.index_information()) == 2
@@ -1129,6 +1158,10 @@ def test_indicies_filters(client_class):
         sum(1 for d in TEST_DOCS if d.get('kingdom') not in ['bird', 'reptile'])
 
     assert coll.count_documents({'weight': {'$gt': 6, '$eq': .75}}) == 0
+
+    # for corner cases of handling no remaining keys
+    assert coll.count_documents({'weight': {'$lt': 0}}) == 0
+    assert coll.count_documents({'weight': {'$lt': 0, '$gt': 1000}}) == 0
 
     with pytest.raises(mongita.errors.PyMongoError):
         coll.count_documents({'weight': {'$eqq': 6}})
@@ -1211,6 +1244,7 @@ def test_thread_safe_io(client_class):
         assert client.db.snake_hunter.find_one({'i': i})
     assert client.db.snake_hunter.count_documents({}) == LEN_TEST_DOCS * 8
     assert client.db.snake_hunter.count_documents({'name': 'Human'}) == 8
+
 
 def flatten(list_of_lists):
     return [y for x in list_of_lists for y in x]
