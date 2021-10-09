@@ -642,18 +642,18 @@ def test_push(client_class):
     coll.update_one({"name": "Meercat"}, {"$push": {"continents": "foobar"}})
     new_meercat_continents = coll.find_one({"name": "Meercat"})["continents"]
     assert len(new_meercat_continents) == 2
-    assert set(new_meercat_continents) == {"foobar", "AF"}
+    assert new_meercat_continents == ["AF", "foobar"]
 
     coll.update_one({"name": "Meercat"}, {"$push": {"nicknames": "slayer"}})
     meercat_nicknames = coll.find_one({"name": "Meercat"})["nicknames"]
     assert type(meercat_nicknames) == list
     assert len(meercat_nicknames) == 1
-    assert set(meercat_nicknames) == {'slayer'}
+    assert meercat_nicknames == ['slayer']
 
     coll.update_one({"name": "Meercat"}, {"$push": {"nicknames": "murderhouse"}})
     meercat_nicknames = coll.find_one({"name": "Meercat"})["nicknames"]
     assert type(meercat_nicknames) == list
-    assert set(meercat_nicknames) == {'slayer', 'murderhouse'}
+    assert meercat_nicknames == ['slayer', 'murderhouse']
 
     with pytest.raises(errors.MongitaError):
         coll.update_one({"name": "Meercat"}, {"$push": {"name": "murderhouse"}})
