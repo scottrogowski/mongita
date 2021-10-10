@@ -63,7 +63,7 @@ def _validate_filter(filter):
                 if op.startswith('$') and op not in _SUPPORTED_FILTER_OPERATORS:
                     raise MongitaError(
                         "Mongita does not support %r. These filter operators are "
-                        "supported: %r" % (k, _SUPPORTED_FILTER_OPERATORS))
+                        "supported: %r" % (op, _SUPPORTED_FILTER_OPERATORS))
 
 
 def _validate_update(update):
@@ -117,9 +117,15 @@ def _validate_doc(doc):
 
 
 def _overlap(iter_a, iter_b):
-    if any(item in iter_b for item in iter_a):
-        return True
-    return False
+    """
+    Return if there is any overlap between iter_a and iter_b
+    from https://stackoverflow.com/questions/3170055
+
+    :param iter_a list:
+    :param iter_b list:
+    :rtype: bool
+    """
+    return not set(iter_a).isdisjoint(iter_b)
 
 
 def _doc_matches_agg(doc_v, query_ops):
@@ -268,6 +274,7 @@ def _get_ids_from_idx(idx, query_ops):
         return set()
 
     keys_remain = set(idx.keys())
+    keys_not_cursed = keys_remain.copy()
     keys_cursed = set()
 
     for query_op, query_val in sorted(query_ops.items(),
@@ -277,8 +284,9 @@ def _get_ids_from_idx(idx, query_ops):
             keys_remain = {clean_idx_key} if clean_idx_key in keys_remain else set()
 
         elif query_op == '$ne':
-            _keys_cursed = set(k for k in keys_remain if k == clean_idx_key)
+            _keys_cursed = set(k for k in keys_not_cursed if k == clean_idx_key)
             keys_remain -= _keys_cursed
+            keys_not_cursed -= _keys_cursed
             keys_cursed.update(_keys_cursed)
         elif query_op == '$lt':
             keys_remain = _ids_given_irange_filters(keys_remain, idx,
@@ -306,12 +314,12 @@ def _get_ids_from_idx(idx, query_ops):
             if not isinstance(query_val, (list, tuple, set)):
                 raise MongitaError("'$nin' requires an iterable")
             clean_q_val = [_make_idx_key(e) for e in query_val]
-            _keys_cursed = set(k for k in keys_remain
+            _keys_cursed = set(k for k in keys_not_cursed
                                if k in clean_q_val)
             keys_remain -= _keys_cursed
+            keys_not_cursed -= _keys_cursed
             keys_cursed.update(_keys_cursed)
         # validation of options is done earlier
-
     ids_cursed = set()
     for k in keys_cursed:
         ids_cursed.update(idx[k])

@@ -583,9 +583,9 @@ def test_filters(client_class):
 def test_in_filter(client_class):
     # # From https://github.com/scottrogowski/mongita/issues/18
 
-    for i in range(2):
+    for do_make_idx in (False, True):
         client, coll, imr = setup_many(client_class)
-        if i:
+        if do_make_idx:
             coll.create_index("kingdom")
             coll.create_index("continents")
 
@@ -607,6 +607,49 @@ def test_in_filter(client_class):
         assert coll.count_documents({'continents': {'$nin': ['SA']}}) == LEN_TEST_DOCS - 1
         assert coll.count_documents({'continents': {'$nin': ['ABC']}}) == LEN_TEST_DOCS
         assert coll.count_documents({'continents': {'$nin': []}}) == LEN_TEST_DOCS
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_filter_combos(client_class):
+    # The code for combining multiple filters together is rather complicated
+    # this checks that the filters are actually working as anticipated.
+
+    for do_make_idx in (False, True):
+        print("do_make_idx", do_make_idx)
+        client, coll, imr = setup_many(client_class)
+        if do_make_idx:
+            coll.create_index("weight")
+            coll.create_index("continents")
+            coll.create_index("attrs.colors")
+
+        # TODO human color is not a list. Does that make sense?
+        assert coll.count_documents({'continents': {'$in': ['AF', 'NA'],
+                                                    '$nin': ['EA']}}) == 2
+        assert coll.count_documents({'attrs.colors': {'$in': ['brown', 'grey'],
+                                                      '$nin': ['black']}}) == 3
+        assert coll.count_documents({'attrs.colors': {'$in': ['brown', 'grey'],
+                                                      '$nin': ['black']},
+                                     'weight': {'$gt': 2}}) == 1
+        assert coll.count_documents({'attrs.colors': {'$in': ['brown', 'grey'],
+                                                      '$nin': ['black']},
+                                     'weight': {'$lt': 2}}) == 2
+        assert coll.count_documents({'attrs.colors': {'$in': ['brown', 'grey'],
+                                                      '$nin': ['black']},
+                                     'weight': {'$eq': 1.4}}) == 1
+        assert coll.count_documents({'attrs.colors': {'$in': ['brown', 'grey'],
+                                                      '$nin': ['black']},
+                                     'weight': {'$eq': 1.5}}) == 0
+        assert coll.count_documents({'attrs.colors': {'$in': ['brown', 'grey'],
+                                                      '$nin': ['black']},
+                                     'weight': {'$ne': 1.4}}) == 2
+        assert coll.count_documents({'attrs.colors': {'$in': ['brown', 'grey'],
+                                                      '$nin': ['black']},
+                                     'weight': {'$ne': 1.4,
+                                                '$gt': 1}}) == 1
+        assert coll.count_documents({'attrs.colors': {'$in': ['brown', 'grey'],
+                                                      '$nin': ['black']},
+                                     'weight': {'$lt': 1,
+                                                '$ne': .75}}) == 0
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
