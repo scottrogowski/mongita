@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime, date
 import functools
 from numbers import Number
@@ -464,6 +465,44 @@ def test_limit(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
+def test_skip(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(TypeError):
+        coll.find({}).skip(2.0)
+    with pytest.raises(TypeError):
+        coll.find({}).skip("2")
+    with pytest.raises(ValueError):
+        coll.find({}).skip(-1)
+    with pytest.raises(TypeError):
+        next(coll.find({}, skip=2.0))
+    with pytest.raises(TypeError):
+        next(coll.find({}, skip="2"))
+    with pytest.raises(ValueError):
+        next(coll.find({}, skip=-1))
+
+    assert len(list(coll.find(skip=0))) == LEN_TEST_DOCS
+    assert len(list(coll.find(skip=3))) == LEN_TEST_DOCS - 3
+    assert len(list(coll.find(skip=3, limit=1))) == 1
+
+    assert len(list(coll.find().skip(0))) == LEN_TEST_DOCS
+    assert len(list(coll.find().skip(3))) == LEN_TEST_DOCS - 3
+    assert len(list(coll.find().skip(3).limit(1))) == 1
+
+    assert len(list(coll.find(skip=2).limit(2))) == 2
+    assert len(list(coll.find(limit=3).skip(2))) == 3
+
+    assert set(d['name'] for d in coll.find(skip=1).limit(1).sort('name')) == {'Human'}
+    assert set(d['name'] for d in coll.find().sort('name').skip(2).limit(2)) == \
+        {'Indian grey mongoose', 'King Cobra'}
+
+    # skipping shouldn't happen after iteration has begun
+    doc_cursor = coll.find()
+    next(doc_cursor)
+    with pytest.raises(errors.InvalidOperation):
+        doc_cursor.skip(2)
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
 def test_replace_one(client_class):
     client, coll, imr = setup_many(client_class)
     with pytest.raises(TypeError):
@@ -663,6 +702,152 @@ def test_update_many(client_class):
                           {'$inc': {'weight': 1}})
     assert set(d.get('weight') for d in coll.find({})) == \
            set(d['weight'] + 1 if isinstance(d.get('weight'), Number) and d.get('weight') < 4 else d.get('weight') for d in TEST_DOCS)
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_push(client_class):
+    client, coll, imr = setup_many(client_class)
+    assert len(coll.find_one({"name": "Meercat"})["continents"]) == 1
+    coll.update_one({"name": "Meercat"}, {"$push": {"continents": "foobar"}})
+    new_meercat_continents = coll.find_one({"name": "Meercat"})["continents"]
+    assert len(new_meercat_continents) == 2
+    assert new_meercat_continents == ["AF", "foobar"]
+
+    coll.update_one({"name": "Meercat"}, {"$push": {"nicknames": "slayer"}})
+    meercat_nicknames = coll.find_one({"name": "Meercat"})["nicknames"]
+    assert type(meercat_nicknames) == list
+    assert len(meercat_nicknames) == 1
+    assert meercat_nicknames == ['slayer']
+
+    coll.update_one({"name": "Meercat"}, {"$push": {"nicknames": "murderhouse"}})
+    meercat_nicknames = coll.find_one({"name": "Meercat"})["nicknames"]
+    assert type(meercat_nicknames) == list
+    assert meercat_nicknames == ['slayer', 'murderhouse']
+
+    with pytest.raises(errors.MongitaError):
+        coll.update_one({"name": "Meercat"}, {"$push": {"name": "murderhouse"}})
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_no_leak(client_class):
+    # Test that modifying documents by various means after insert/retrieval doesn't
+    # impact what is stored
+
+    def fresh_coll():
+        remove_test_dir()
+        assert not os.path.exists(TEST_DIR)
+        client = client_class()
+        coll = client.db.snake_hunter
+        return client, coll
+
+    def docs_eq(doc_a, doc_b):
+        doc_a = copy.deepcopy(doc_a)
+        doc_b = copy.deepcopy(doc_b)
+        doc_a.pop('_id', None)
+        doc_b.pop('_id', None)
+        return doc_a == doc_b
+
+    def mod_doc_local(doc):
+        doc['test'] = 'test'
+        doc['name'] = 'test'
+        doc['weight'] = 0
+        doc['continents'].append('test')
+        doc['attrs']['colors'] = ['test', 'test2']
+        doc['attrs']['species'] = 'test'
+
+    # change local for Insert / find_one
+    _, coll = fresh_coll()
+    one_doc = copy.deepcopy(TEST_DOCS[0])
+    coll.insert_one(one_doc)
+    mod_doc_local(one_doc)
+    db_doc = coll.find_one({})
+    assert docs_eq(db_doc, TEST_DOCS[0])
+    mod_doc_local(db_doc)
+    db_doc_2 = coll.find_one({})
+    assert docs_eq(db_doc_2, TEST_DOCS[0])
+
+    # change local for replace_one / find_one
+    one_doc = copy.deepcopy(TEST_DOCS[1])
+    coll.replace_one({}, one_doc)
+    mod_doc_local(one_doc)
+    db_doc = coll.find_one({})
+    assert docs_eq(db_doc, TEST_DOCS[1])
+    mod_doc_local(db_doc)
+    db_doc_2 = coll.find_one({})
+    assert docs_eq(db_doc_2, TEST_DOCS[1])
+
+    # change local for insert_many / find_many
+    _, coll = fresh_coll()
+    one_doc = copy.deepcopy(TEST_DOCS[0])
+    coll.insert_many(TEST_DOCS)
+    mod_doc_local(one_doc)
+    db_docs = list(coll.find({}))
+    assert docs_eq(db_docs[0], TEST_DOCS[0])
+    mod_doc_local(db_docs[0])
+    db_docs_2 = list(coll.find({}))
+    assert docs_eq(db_docs_2[0], TEST_DOCS[0])
+
+    # change db for update_one / find_one
+    _, coll = fresh_coll()
+    one_doc = copy.deepcopy(TEST_DOCS[0])
+    coll.insert_one(one_doc)
+    uor = coll.update_one({}, {
+        '$set': {'name': 'test'},
+        '$inc': {'weight': 1},
+        '$push': {'continents': 'test'}})
+    assert uor.modified_count == 1
+    assert docs_eq(one_doc, TEST_DOCS[0])
+
+    _, coll = fresh_coll()
+    test_docs = copy.deepcopy(TEST_DOCS[:6])
+    coll.insert_many(test_docs)
+    umr = coll.update_many({}, {
+        '$set': {'name': 'test'},
+        '$inc': {'weight': 1},
+        '$push': {'continents': 'test'}})
+    assert umr.modified_count == 6
+    assert docs_eq(test_docs[0], TEST_DOCS[0])
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_no_leak_push(client_class):
+    # adresses leak found in by https://github.com/scottrogowski/mongita/pull/16
+    def insert_many():
+        client, coll, imr = setup_many(client_class)
+        return coll
+
+    def insert_one():
+        client, coll, imr = setup_one(client_class)
+        return coll
+
+    def replace_one():
+        client, coll, imr = setup_many(client_class)
+        coll.replace_one({"name": "Meercat"}, coll.find_one({"name": "Human"}))
+        return coll
+
+    for new_doc_gen in (insert_many, insert_one, replace_one):
+        coll = new_doc_gen()
+        array_field = "continents"
+        push_value = "foobar"
+        array_initial = coll.find_one({})[array_field]
+
+        coll.update_one({}, {"$push": {array_field: push_value}})
+
+        array_final = coll.find_one({})[array_field]
+
+        assert len(array_final) == len(array_initial) + 1
+        assert array_final == [*array_initial, push_value]
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_inc_non_num(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    with pytest.raises(errors.MongitaError):
+        coll.update_one({}, {"$inc": {"name": 10}})
+
+    with pytest.raises(errors.MongitaError):
+        coll.update_one({}, {"$inc": {"weight": "10"}})
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1795,7 +1980,7 @@ def test_sync_basic(monkeypatch):
     assert set(d['name'] for d in mongodb_client.mongita_test.snake_hunter.find({})) \
         == set(d['name'] for d in TEST_DOCS)
 
-    monkeypatch.setattr('builtins.input', lambda : "y")
+    monkeypatch.setattr('builtins.input', lambda: "y")
     mongita_client.mongita_test.snake_hunter_2.insert_many(TEST_DOCS)
     mongitasync('mongita', 'mongodb', 'mongita_test.snake_hunter_2', source_uri=TEST_DIR)
     assert mongodb_client.mongita_test.snake_hunter_2.count_documents({}) == LEN_TEST_DOCS
@@ -1831,6 +2016,3 @@ def test_sync_basic(monkeypatch):
                 source_uri='mongodb://localhost:27017', destination_uri=TEST_DIR)
     assert mongita_client.mongita_test.snake_hunter_2.count_documents({}) == LEN_TEST_DOCS
     assert mongita_client.mongita_test.snake_hunter_3.count_documents({}) == LEN_TEST_DOCS * 150
-
-
-

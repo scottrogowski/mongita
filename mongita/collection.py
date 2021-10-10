@@ -17,7 +17,7 @@ from .write_concern import WriteConcern
 
 
 _SUPPORTED_FILTER_OPERATORS = ('$in', '$eq', '$gt', '$gte', '$lt', '$lte', '$ne', '$nin')
-_SUPPORTED_UPDATE_OPERATORS = ('$set', '$inc')
+_SUPPORTED_UPDATE_OPERATORS = ('$set', '$inc', '$push')
 _DEFAULT_METADATA = {
     'options': {},
     'indexes': {},
@@ -323,7 +323,13 @@ def _get_ids_from_idx(idx, query_ops):
     return ret
 
 
-def _set_item_in_doc(update_op, update_op_dict, doc):
+def _failed_update_error(update_op, update_op_dict, doc, msg):
+    """Helper for raising errors on update"""
+    return MongitaError("Cannot apply operation %r to %r (%s)" %
+                        ({update_op: update_op_dict}, doc, msg))
+
+
+def _update_item_in_doc(update_op, update_op_dict, doc):
     """
     Given an $update_op, a {doc_key: value} update_op_dict, and a doc,
     Update the doc in-place at doc_key with the update operation.
@@ -345,12 +351,26 @@ def _set_item_in_doc(update_op, update_op_dict, doc):
         if isinstance(ds, list):
             _rightpad(ds, last_key)
         if ds is None:
-            raise MongitaError("Cannot apply operation %r to %r" %
-                               ({update_op: update_op_dict}, doc))
+            raise _failed_update_error(update_op, update_op_dict, doc,
+                                       "Could not find item")
         if update_op == '$set':
             ds[last_key] = value
         elif update_op == '$inc':
+            if not isinstance(value, (int, float)):
+                raise _failed_update_error(update_op, update_op_dict, doc,
+                                           "Increment was not numeric")
+            elif not isinstance(ds.get(last_key), (int, float)):
+                raise _failed_update_error(update_op, update_op_dict, doc,
+                                           "Document value was not numeric")
             ds[last_key] += value
+        elif update_op == '$push':
+            if isinstance(ds.get(last_key), list):
+                ds[last_key].append(value)
+            elif last_key not in ds:
+                ds[last_key] = [value]
+            else:
+                raise _failed_update_error(update_op, update_op_dict, doc,
+                                           "Document value was not a list")
         # Should never get an update key we don't recognize b/c _validate_update
 
 
@@ -698,7 +718,7 @@ class Collection():
         :rtype: results.InsertOneResult
         """
         _validate_doc(document)
-        document = dict(document)
+        document = copy.deepcopy(document)
         document['_id'] = document.get('_id') or bson.ObjectId()
         self.__create()
         with self._engine.lock:
@@ -722,7 +742,7 @@ class Collection():
         ready_docs = []
         for doc in documents:
             _validate_doc(doc)
-            doc = dict(doc)
+            doc = copy.deepcopy(doc)
             doc['_id'] = doc.get('_id') or bson.ObjectId()
             ready_docs.append(doc)
         self.__create()
@@ -761,7 +781,7 @@ class Collection():
         _validate_doc(replacement)
         self.__create()
 
-        replacement = dict(replacement)
+        replacement = copy.deepcopy(replacement)
 
         with self._engine.lock:
             doc_id = self.__find_one_id(filter)
@@ -813,9 +833,9 @@ class Collection():
         if doc_id:
             doc = self._engine.get_doc(self.full_name, doc_id)
             if doc:
-                return dict(doc)
+                return copy.deepcopy(doc)
 
-    def __find_ids(self, filter, sort=None, limit=None, metadata=None):
+    def __find_ids(self, filter, sort=None, limit=None, skip=None, metadata=None):
         """
         Given a filter, find all doc_ids that match this filter.
         Be sure to also sort and limit them.
@@ -826,6 +846,7 @@ class Collection():
         :param filter dict:
         :param sort list[(key, direction)]|None:
         :param limit int|None:
+        :param skip int|None:
         :param metadata dict|None:
         :rtype: Generator(list[str])
         """
@@ -854,6 +875,10 @@ class Collection():
                 if _doc_matches_slow_filters(doc, slow_filters):
                     docs_to_return.append(doc)
             _sort_docs(docs_to_return, sort)
+
+            if skip:
+                docs_to_return = docs_to_return[skip:]
+
             if limit is None:
                 for doc in docs_to_return:
                     yield doc['_id']
@@ -865,6 +890,9 @@ class Collection():
                     if i == limit:
                         return
             return
+
+        if skip:
+            doc_ids = doc_ids[skip:]
 
         if limit is None:
             for doc_id in doc_ids:
@@ -882,7 +910,7 @@ class Collection():
                 if i == limit:
                     return
 
-    def __find(self, filter, sort=None, limit=None, metadata=None):
+    def __find(self, filter, sort=None, limit=None, skip=None, metadata=None, shallow=False):
         """
         Given a filter, find all docs that match this filter.
         This method returns a generator.
@@ -890,13 +918,20 @@ class Collection():
         :param filter dict:
         :param sort list[(key, direction)]|None:
         :param limit int|None:
+        :param skip int|None:
         :param metadata dict|None:
         :rtype: Generator(list[dict])
         """
+        gen = self.__find_ids(filter, sort, limit, skip, metadata=metadata)
 
-        for doc_id in self.__find_ids(filter, sort, limit, metadata=metadata):
-            doc = self._engine.get_doc(self.full_name, doc_id)
-            yield dict(doc)
+        if shallow:
+            for doc_id in gen:
+                doc = self._engine.get_doc(self.full_name, doc_id)
+                yield doc
+        else:
+            for doc_id in gen:
+                doc = self._engine.get_doc(self.full_name, doc_id)
+                yield copy.deepcopy(doc)
 
     @support_alert
     def find_one(self, filter=None, sort=None):
@@ -916,7 +951,7 @@ class Collection():
         return self.__find_one(filter, sort)
 
     @support_alert
-    def find(self, filter=None, sort=None, limit=None):
+    def find(self, filter=None, sort=None, limit=None, skip=None):
         """
         Return a cursor of all matching documents.
 
@@ -935,7 +970,13 @@ class Collection():
         if limit is not None and not isinstance(limit, int):
             raise TypeError('Limit must be an integer')
 
-        return Cursor(self.__find, filter, sort, limit)
+        if skip is not None:
+            if not isinstance(skip, int):
+                raise TypeError('Skip must be an integer')
+            if skip < 0:
+                raise ValueError('Skip must be >=0')
+
+        return Cursor(self.__find, filter, sort, limit, skip)
 
     def __update_doc(self, doc_id, update):
         """
@@ -948,7 +989,7 @@ class Collection():
         """
         doc = self._engine.get_doc(self.full_name, doc_id)
         for update_op, update_op_dict in update.items():
-            _set_item_in_doc(update_op, update_op_dict, doc)
+            _update_item_in_doc(update_op, update_op_dict, doc)
         assert self._engine.put_doc(self.full_name, doc)
         return dict(doc)
 
@@ -1166,7 +1207,8 @@ class Collection():
 
         with self._engine.lock:
             metadata = self.__get_metadata()
-            _update_idx_doc_with_new_documents(self.__find({}, metadata=metadata), new_idx_doc)
+            _update_idx_doc_with_new_documents(self.__find({}, metadata=metadata, shallow=True),
+                                               new_idx_doc)
             metadata['indexes'][idx_name] = new_idx_doc
             assert self._engine.put_metadata(self._base_location, metadata)
         return idx_name
