@@ -807,12 +807,13 @@ class Collection():
             self.__update_indicies([replacement], metadata)
             return UpdateResult(1, 1)
 
-    def __find_one_id(self, filter, sort=None):
+    def __find_one_id(self, filter, sort=None, skip=None):
         """
         Given the filter, return a single object_id or None.
 
         :param filter dict:
         :param sort list[(key, direction)]|None
+        :param skip int|None
         :rtype: str|None
         """
 
@@ -825,19 +826,20 @@ class Collection():
             return None
 
         try:
-            return next(self.__find_ids(filter, sort))
+            return next(self.__find_ids(filter, sort, skip=skip))
         except StopIteration:
             return None
 
-    def __find_one(self, filter, sort):
+    def __find_one(self, filter, sort, skip):
         """
         Given the filter, return a single doc or None.
 
         :param filter dict:
         :param sort list[(key, direction)]|None
+        :param skip int|None
         :rtype: dict|None
         """
-        doc_id = self.__find_one_id(filter, sort)
+        doc_id = self.__find_one_id(filter, sort, skip)
         if doc_id:
             doc = self._engine.get_doc(self.full_name, doc_id)
             if doc:
@@ -942,12 +944,13 @@ class Collection():
                 yield copy.deepcopy(doc)
 
     @support_alert
-    def find_one(self, filter=None, sort=None):
+    def find_one(self, filter=None, sort=None, skip=None):
         """
         Return the first matching document.
 
         :param filter dict:
         :param sort list[(key, direction)]|None:
+        :param skip int|None:
         :rtype: dict|None
         """
 
@@ -956,7 +959,7 @@ class Collection():
 
         if sort is not None:
             sort = _validate_sort(sort)
-        return self.__find_one(filter, sort)
+        return self.__find_one(filter, sort, skip)
 
     @support_alert
     def find(self, filter=None, sort=None, limit=None, skip=None):
@@ -966,6 +969,7 @@ class Collection():
         :param filter dict:
         :param sort list[(key, direction)]|None:
         :param limit int|None:
+        :param skip int|None:
         :rtype: cursor.Cursor
         """
 

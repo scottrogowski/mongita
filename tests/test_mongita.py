@@ -283,6 +283,15 @@ def test_find_one(client_class):
     with pytest.raises(errors.PyMongoError):
         doc = coll.find_one({'_id': 5})
 
+    doc = coll.find_one({'family': 'Herpestidae'}, sort=[('weight', -1)], skip=0)
+    assert doc['name'] == 'Indian grey mongoose'
+
+    doc = coll.find_one({'family': 'Herpestidae'}, sort=[('weight', -1)], skip=1)
+    assert doc['name'] == 'Meercat'
+
+    doc = coll.find_one({'family': 'Herpestidae'}, sort=[('weight', -1)], skip=2)
+    assert not doc
+
 
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_find(client_class):
