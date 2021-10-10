@@ -63,7 +63,7 @@ def _validate_filter(filter):
                 if op.startswith('$') and op not in _SUPPORTED_FILTER_OPERATORS:
                     raise MongitaError(
                         "Mongita does not support %r. These filter operators are "
-                        "supported: %r" % (k, _SUPPORTED_FILTER_OPERATORS))
+                        "supported: %r" % (op, _SUPPORTED_FILTER_OPERATORS))
 
 
 def _validate_update(update):
@@ -116,6 +116,18 @@ def _validate_doc(doc):
             raise InvalidName("All document keys must be truthy and cannot start with '$'.")
 
 
+def _overlap(iter_a, iter_b):
+    """
+    Return if there is any overlap between iter_a and iter_b
+    from https://stackoverflow.com/questions/3170055
+
+    :param iter_a list:
+    :param iter_b list:
+    :rtype: bool
+    """
+    return not set(iter_a).isdisjoint(iter_b)
+
+
 def _doc_matches_agg(doc_v, query_ops):
     """
     Return whether an individual document value matches a dict of
@@ -123,6 +135,9 @@ def _doc_matches_agg(doc_v, query_ops):
     are many.
 
     e.g. collection.find({'path.to.doc_v': {'$query_op': query_val}})
+
+    The loop returns False whenever we know for sure that the document is
+    not part of the query. At the end return True
 
     :param doc_v: The value in the doc to compare against
     :param query_ops {$query_op: query_val}:
@@ -140,12 +155,14 @@ def _doc_matches_agg(doc_v, query_ops):
             elif query_op == '$in':
                 if not isinstance(query_val, (list, tuple, set)):
                     raise MongitaError("'$in' requires an iterable")
-                if doc_v not in query_val:
+                if not ((isinstance(doc_v, list) and _overlap(doc_v, query_val))
+                        or (doc_v in query_val)):
                     return False
             elif query_op == '$nin':
                 if not isinstance(query_val, (list, tuple, set)):
                     raise MongitaError("'$nin' requires an iterable")
-                if doc_v in query_val:
+                if (isinstance(doc_v, list) and _overlap(doc_v, query_val)) \
+                   or (doc_v in query_val):
                     return False
             elif query_op == '$lt':
                 try:
@@ -222,9 +239,7 @@ def _ids_given_irange_filters(matched_keys, idx, **kwargs):
     ret = set(idx.irange(**kwargs))
     ret = set(key for key in ret if key[0] == clean_idx_key[0])
 
-    if matched_keys:
-        return set.intersection(matched_keys, ret)
-    return ret
+    return set.intersection(matched_keys, ret)
 
 
 def _idx_filter_sort(query_op_tup):
@@ -250,50 +265,70 @@ def _get_ids_from_idx(idx, query_ops):
     :param query_ops str|dict:
     :rtype: set
     """
-    matched_keys = set()
-    if isinstance(query_ops, dict):
+    if not isinstance(query_ops, dict):
+        return set(idx.get(_make_idx_key(query_ops), set()))
+
+    if not set(query_ops.keys()).intersection(_SUPPORTED_FILTER_OPERATORS):
         if _make_idx_key(query_ops) in idx.keys():
-            matched_keys = {_make_idx_key(query_ops)}
-        else:
-            for query_op, query_val in sorted(query_ops.items(),
-                                              key=_idx_filter_sort, reverse=True):
-                clean_idx_key = _make_idx_key(query_val)
-                if query_op == '$eq':
-                    matched_keys = {clean_idx_key} if clean_idx_key in (matched_keys or idx.keys()) else set()
-                elif query_op == '$ne':
-                    matched_keys = set(k for k in matched_keys or idx.keys() if k != clean_idx_key)
-                elif query_op == '$lt':
-                    matched_keys = _ids_given_irange_filters(matched_keys, idx,
-                                                             maximum=clean_idx_key,
-                                                             inclusive=(False, False))
-                elif query_op == '$lte':
-                    matched_keys = _ids_given_irange_filters(matched_keys, idx,
-                                                             maximum=clean_idx_key,
-                                                             inclusive=(False, True))
-                elif query_op == '$gt':
-                    matched_keys = _ids_given_irange_filters(matched_keys, idx,
-                                                             minimum=clean_idx_key,
-                                                             inclusive=(False, False))
-                elif query_op == '$gte':
-                    matched_keys = _ids_given_irange_filters(matched_keys, idx,
-                                                             minimum=clean_idx_key,
-                                                             inclusive=(True, False))
-                elif query_op == '$in':
-                    if not isinstance(query_val, (list, tuple, set)):
-                        raise MongitaError("'$in' requires an iterable")
-                    clean_q_val = [_make_idx_key(e) for e in query_val]
-                    matched_keys = set(k for k in matched_keys or idx.keys() if k in clean_q_val)
-                elif query_op == '$nin':
-                    if not isinstance(query_val, (list, tuple, set)):
-                        raise MongitaError("'$nin' requires an iterable")
-                    clean_q_val = [_make_idx_key(e) for e in query_val]
-                    matched_keys = set(k for k in matched_keys or idx.keys() if k not in clean_q_val)
-                # validation of options is done earlier
-        ret = set()
-        for k in matched_keys:
-            ret.update(idx[k])
-        return ret
-    return set(idx.get(_make_idx_key(query_ops), set()))
+            return idx[_make_idx_key(query_ops)]
+        return set()
+
+    keys_remain = set(idx.keys())
+    keys_not_cursed = keys_remain.copy()
+    keys_cursed = set()
+
+    for query_op, query_val in sorted(query_ops.items(),
+                                      key=_idx_filter_sort, reverse=True):
+        clean_idx_key = _make_idx_key(query_val)
+        if query_op == '$eq':
+            keys_remain = {clean_idx_key} if clean_idx_key in keys_remain else set()
+
+        elif query_op == '$ne':
+            _keys_cursed = set(k for k in keys_not_cursed if k == clean_idx_key)
+            keys_remain -= _keys_cursed
+            keys_not_cursed -= _keys_cursed
+            keys_cursed.update(_keys_cursed)
+        elif query_op == '$lt':
+            keys_remain = _ids_given_irange_filters(keys_remain, idx,
+                                                    maximum=clean_idx_key,
+                                                    inclusive=(False, False))
+        elif query_op == '$lte':
+            keys_remain = _ids_given_irange_filters(keys_remain, idx,
+                                                    maximum=clean_idx_key,
+                                                    inclusive=(False, True))
+        elif query_op == '$gt':
+            keys_remain = _ids_given_irange_filters(keys_remain, idx,
+                                                    minimum=clean_idx_key,
+                                                    inclusive=(False, False))
+        elif query_op == '$gte':
+            keys_remain = _ids_given_irange_filters(keys_remain, idx,
+                                                    minimum=clean_idx_key,
+                                                    inclusive=(True, False))
+        elif query_op == '$in':
+            if not isinstance(query_val, (list, tuple, set)):
+                raise MongitaError("'$in' requires an iterable")
+            clean_q_val = [_make_idx_key(e) for e in query_val]
+            keys_remain = set(k for k in keys_remain
+                              if k in clean_q_val)
+        elif query_op == '$nin':
+            if not isinstance(query_val, (list, tuple, set)):
+                raise MongitaError("'$nin' requires an iterable")
+            clean_q_val = [_make_idx_key(e) for e in query_val]
+            _keys_cursed = set(k for k in keys_not_cursed
+                               if k in clean_q_val)
+            keys_remain -= _keys_cursed
+            keys_not_cursed -= _keys_cursed
+            keys_cursed.update(_keys_cursed)
+        # validation of options is done earlier
+    ids_cursed = set()
+    for k in keys_cursed:
+        ids_cursed.update(idx[k])
+
+    ret = set()
+    for k in keys_remain:
+        ret.update(idx[k])
+    ret -= ids_cursed
+    return ret
 
 
 def _failed_update_error(update_op, update_op_dict, doc, msg):
