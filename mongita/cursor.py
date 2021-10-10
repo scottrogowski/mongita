@@ -30,16 +30,17 @@ def _validate_sort(key_or_list, direction=None):
 class Cursor():
     UNIMPLEMENTED = ['add_option', 'address', 'alive', 'allow_disk_use', 'batch_size',
                      'collation', 'collection', 'comment', 'cursor_id', 'distinct',
-                     'explain', 'hint', 'limit', 'max', 'max_await_time_ms',
+                     'explain', 'hint', 'max', 'max_await_time_ms',
                      'max_time_ms', 'min', 'remove_option', 'retrieved', 'rewind',
-                     'session', 'skip', 'where']
+                     'session', 'where']
     DEPRECATED = ['count', 'max_scan']
 
-    def __init__(self, _find, filter, sort, limit):
+    def __init__(self, _find, filter, sort, limit, skip):
         self._find = _find
         self._filter = filter
         self._sort = sort or []
         self._limit = limit or None
+        self._skip = skip or None
         self._cursor = None
 
     def __getattr__(self, attr):
@@ -66,7 +67,8 @@ class Cursor():
         """
         if self._cursor:
             return self._cursor
-        self._cursor = self._find(filter=self._filter, sort=self._sort, limit=self._limit)
+        self._cursor = self._find(filter=self._filter, sort=self._sort,
+                                  limit=self._limit, skip=self._skip)
         return self._cursor
 
     @support_alert
@@ -119,8 +121,23 @@ class Cursor():
         return self
 
     @support_alert
+    def skip(self, skip):
+        """
+        Skip the first [skip] results of this cursor.
+        """
+        if not isinstance(skip, int):
+            raise TypeError("The 'skip' parameter must be an integer")
+        if skip < 0:
+            raise ValueError("The 'skip' parameter must be >=0")
+        if self._cursor:
+            raise InvalidOperation("Cursor has already started and skip can't be applied")
+
+        self._skip = skip
+        return self
+
+    @support_alert
     def clone(self):
-        return Cursor(self._find, self._filter, self._sort, self._limit)
+        return Cursor(self._find, self._filter, self._sort, self._limit, self._skip)
 
     @support_alert
     def close(self):

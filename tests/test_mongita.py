@@ -465,6 +465,44 @@ def test_limit(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
+def test_skip(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(TypeError):
+        coll.find({}).skip(2.0)
+    with pytest.raises(TypeError):
+        coll.find({}).skip("2")
+    with pytest.raises(ValueError):
+        coll.find({}).skip(-1)
+    with pytest.raises(TypeError):
+        next(coll.find({}, skip=2.0))
+    with pytest.raises(TypeError):
+        next(coll.find({}, skip="2"))
+    with pytest.raises(ValueError):
+        next(coll.find({}, skip=-1))
+
+    assert len(list(coll.find(skip=0))) == LEN_TEST_DOCS
+    assert len(list(coll.find(skip=3))) == LEN_TEST_DOCS - 3
+    assert len(list(coll.find(skip=3, limit=1))) == 1
+
+    assert len(list(coll.find().skip(0))) == LEN_TEST_DOCS
+    assert len(list(coll.find().skip(3))) == LEN_TEST_DOCS - 3
+    assert len(list(coll.find().skip(3).limit(1))) == 1
+
+    assert len(list(coll.find(skip=2).limit(2))) == 2
+    assert len(list(coll.find(limit=3).skip(2))) == 3
+
+    assert set(d['name'] for d in coll.find(skip=1).limit(1).sort('name')) == {'Human'}
+    assert set(d['name'] for d in coll.find().sort('name').skip(2).limit(2)) == \
+        {'Indian grey mongoose', 'King Cobra'}
+
+    # skipping shouldn't happen after iteration has begun
+    doc_cursor = coll.find()
+    next(doc_cursor)
+    with pytest.raises(errors.InvalidOperation):
+        doc_cursor.skip(2)
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
 def test_replace_one(client_class):
     client, coll, imr = setup_many(client_class)
     with pytest.raises(TypeError):
