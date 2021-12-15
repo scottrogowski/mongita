@@ -6,6 +6,7 @@ import os
 import random
 import sys
 import shutil
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 import bson
@@ -111,7 +112,7 @@ TEST_DOCS = [
     },
 ]
 
-TEST_DIR = '/tmp/mongita_unittests'
+TEST_DIR = os.path.join(tempfile.gettempdir(), 'mongita_unittests')
 _MongitaClientDisk = functools.partial(MongitaClientDisk, TEST_DIR)
 LEN_TEST_DOCS = len(TEST_DOCS)
 CLIENTS = (MongitaClientMemory, _MongitaClientDisk)

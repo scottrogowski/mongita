@@ -5,13 +5,14 @@ import pymongo
 
 sys.path.append(os.getcwd().split('/tests')[0])
 
-from test_mongita import remove_test_dir, _MongitaClientDisk
+import mongita
+from test_mongita import remove_test_dir, TEST_DIR
 
 _OriginalMongoClient = pymongo.MongoClient
 
 
 def setup_function():
-    pymongo.MongoClient = _MongitaClientDisk
+    pymongo.MongoClient = mongita.MongitaClientDisk
     remove_test_dir()
 
 
@@ -44,7 +45,7 @@ def test_mongoengine():
         def __repr__(self):
             return f"POST: {self.title} by {self.author} tagged {self.tags}"
 
-    mongoengine.connect("test")
+    mongoengine.connect("test", host=TEST_DIR)
 
     post1 = Post(title='Fun with MongoEngine')
     post1.content = 'Took a look at MongoEngine today, looks pretty cool.'
@@ -65,4 +66,3 @@ def test_mongoengine():
     assert posts[0].title == 'Fun with MongoEngine'
 
     mongoengine.disconnect()
-
