@@ -1,12 +1,12 @@
 ![Mongita Logo](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/mongita.jpg)
 
-![Version 1.1.0](https://img.shields.io/badge/version-1.1.0-brightgreen) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green])
+![Version 1.1.0](https://img.shields.io/badge/version-1.1.0-brightgreen) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green]) ![MacOS|Linux](https://img.shields.io/badge/platforms-macos%20%7C%20linux-brightgreen)
 
 Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on disk or in memory.
 
 > *"Mongita is to MongoDB as SQLite is to SQL"*
 
-Mongita is in active development. Please report any bugs. Mongita is free and open source. [You can contribute!]((#contributing))
+Please report any bugs. Mongita is free and open source. [You can contribute!]((#contributing))
 
 ### Applications
 - **Embedded database**: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
@@ -161,6 +161,7 @@ mongita.results.DeleteResult
 
 Mongita is an *excellent* project for open source contributors. There is a lot to do and it is easy to get started. In particular, the following tasks are high in priority:
 - More testing. Try Mongita on a project and report any bugs. The unit tests are extensive but in-the-wild bugs are still possible.
+- Windows support. Mongita fails unit tests on Windows. Fixing these and integration testing the library would be very helpful.
 - SQLite engine. SQLite beats Mongita in most benchmarks. Having it as an engine would provide a fast persistent database which would be a little less than a perfect MongoDB reproduction.
 - Cache eviction. In the disk engine, cache is never evicted after it is read or written. This could cause issues when dealing with large databases.
 - More [update operators](https://docs.mongodb.com/manual/reference/operator/update/#id1). Currently, only $set and $inc are implemented.
