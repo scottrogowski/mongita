@@ -145,6 +145,9 @@ class MongitaClientDisk(MongitaClient):
     """
     def __init__(self, host=DEFAULT_STORAGE_DIR, **kwargs):
         host = host or DEFAULT_STORAGE_DIR
+        if isinstance(host, list):
+            # fix for mongoengine passing a list to us
+            host = host[0]
         self.engine = disk_engine.DiskEngine.create(host)
         self.is_primary = True
         super().__init__()
