@@ -43,7 +43,7 @@ UNIMPLEMENTED = ['ALL', 'CursorType', 'DeleteMany', 'DeleteOne', 'GEO2D', 'GEOHA
                  'topology', 'topology_description', 'uri_parser', 'version',
                  'version_tuple', 'write_concern']
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 
 def __getattr__(attr):

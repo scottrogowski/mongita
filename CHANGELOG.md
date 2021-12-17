@@ -1,5 +1,9 @@
 # Mongita CHANGELOG
 
+## [1.1.1] - 2021-12-16
+### Fixed
+Mongoengine wasn't working with MongitaClientDisk and the unit tests for mongoengine were not working correctly.
+
 ## [1.1.0] - 2021-10-10
 A few feature requests and bug fixes. One bug fix - addressing the document leak bug -
 has unfortunately impacted performance as Mongita now performs deep copies for most documents.
