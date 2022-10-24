@@ -550,6 +550,10 @@ def test_replace_one(client_class):
                               fake_mongoose,
                               upsert=True)
 
+    # upsert a non-existent document, with a provided ID
+    coll.replace_one({'_id': 'id_from_filter'}, {'key': 'value'}, upsert=True)
+    assert coll.count_documents({'_id': 'id_from_filter'}) == 1
+
     # fail gracefully
     assert not coll.find_one({'name': 'not exists'})
     ur = coll.replace_one({'name': 'not exists'}, {'kingdom': 'fake kingdom'})

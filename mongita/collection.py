@@ -792,7 +792,7 @@ class Collection():
         replacement = copy.deepcopy(replacement)
 
         with self._engine.lock:
-            doc_id = self.__find_one_id(filter)
+            doc_id = self.__find_one_id(filter, upsert=upsert)
             if not doc_id:
                 if upsert:
                     metadata = self.__get_metadata()
@@ -807,7 +807,7 @@ class Collection():
             self.__update_indicies([replacement], metadata)
             return UpdateResult(1, 1)
 
-    def __find_one_id(self, filter, sort=None, skip=None):
+    def __find_one_id(self, filter, sort=None, skip=None, upsert=False):
         """
         Given the filter, return a single object_id or None.
 
@@ -821,7 +821,7 @@ class Collection():
             return self._engine.find_one_id(self._base_location)
 
         if '_id' in filter:
-            if self._engine.doc_exists(self.full_name, filter['_id']):
+            if upsert or self._engine.doc_exists(self.full_name, filter['_id']):
                 return filter['_id']
             return None
 
