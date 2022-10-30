@@ -11,7 +11,7 @@ mongoengine>=0.23,<1.0
 
 # Benchmarking
 coolname>=1.1,<1.2
-lorem>=.1,<.2
+lorem~=0.1
 msgpack>=1.0.2,<1.1
 plotly>=4.14,<5.0
 pygount>=1.2,<2.0
