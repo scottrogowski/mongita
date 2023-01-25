@@ -10,16 +10,88 @@ import bson
 
 from ..common import MetaStorageObject, secure_filename
 from .engine_common import Engine
+import math
 
 DISK_ENGINE_INCUMBENTS = {}
 
 
+class Collection_cache(dict):
+    """
+    A dictionary that can only store a limited number of items.
+    
+    Once the given limit has been exceeded, the oldest (last accessed/inserted) item out of this dict and all its siblings will be removed.
+    """
+    
+    def __init__(self, parent_cache):
+        self.parent_cache = parent_cache
+        
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        
+        # Move the item to the front of the cache.
+        del(self[key])
+        super().__setitem__(key, value)
+        return value
+        
+    def __setitem__(self, key, value):
+        # Always insert at the end.
+        self.pop(key, None)
+        super().__setitem__(key, value)
+        
+        self.parent_cache.trim()
+
+
+class Cache(collections.defaultdict):
+    """
+    A dictionary of dictionaries that can only store a limited number of items.
+    
+    Once the given limit has been exceeded, the oldest (last accessed/inserted) item is removed/lost.
+    """
+    
+    def __init__(self, *args, engine, **kwargs):
+        """
+        """
+        super().__init__(self.collection_cache, *args, **kwargs)
+        self.engine = engine
+    
+    def collection_cache(self):
+        """
+        Get a new object for caching the records of a collection.
+        """
+        return Collection_cache(self)
+    
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        
+        # Move the item to the front of the cache.
+        del(self[key])
+        super().__setitem__(key, value)
+        return value
+        
+    def __setitem__(self, key, value):
+        # Always insert at the end.
+        self.pop(key, None)
+        super().__setitem__(key, value)
+    
+    def cache_size(self):
+        return sum((len(cache) for cache in self.values()), 0)
+    
+    def trim(self):
+        while self.cache_size() > self.engine.cache_size:
+            for cache in self.values():
+                if len(cache) > 0:
+                    del(cache[next(iter(cache))])
+                    break
+            
+        
+
 class DiskEngine(Engine):
-    def __init__(self, base_storage_path):
+    def __init__(self, base_storage_path, cache_size = None):
         if not os.path.exists(base_storage_path):
             os.mkdir(base_storage_path)
         self.base_storage_path = base_storage_path
-        self._cache = collections.defaultdict(dict)
+        self.cache_size = cache_size if cache_size is not None else math.inf
+        self._cache = Cache(engine = self)
         self._collection_fhs = {}
         self._metadata = {}
         self._file_attrs = collections.defaultdict(dict)
@@ -247,7 +319,7 @@ class DiskEngine(Engine):
             os.makedirs(full_loc)
 
     def close(self):
-        self._cache = collections.defaultdict(dict)
+        self._cache = self._cache = Cache(engine = self)
         self._metadata = {}
         self._file_attrs = {}
         for fh in self._collection_fhs.values():
