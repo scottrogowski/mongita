@@ -99,11 +99,11 @@ class DiskEngine(Engine):
         self.lock = threading.RLock()
 
     @staticmethod
-    def create(base_storage_path):
+    def create(base_storage_path, cache_size = None):
         if base_storage_path in DISK_ENGINE_INCUMBENTS:
             DISK_ENGINE_INCUMBENTS[base_storage_path].close()
             return DISK_ENGINE_INCUMBENTS[base_storage_path]
-        de = DiskEngine(base_storage_path)
+        de = DiskEngine(base_storage_path, cache_size = cache_size)
         DISK_ENGINE_INCUMBENTS[base_storage_path] = de
         return de
 
