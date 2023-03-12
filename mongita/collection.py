@@ -565,24 +565,24 @@ def _sort_func(doc, sort_key):
     return _sort_tup(item)
 
 
-def _sort_docs(docs, sort_list):
-    """
-    Given the sort list provided in the .sort() method,
-    sort the documents in place.
+# def _sort_docs(docs, sort_list):
+#     """
+#     Given the sort list provided in the .sort() method,
+#     sort the documents in place.
 
-    from https://docs.python.org/3/howto/sorting.html
+#     from https://docs.python.org/3/howto/sorting.html
 
-    :param docs list[dict]:
-    :param sort_list list[(key, direction)]
-    :rtype: None
-    """
-    for sort_key, direction in reversed(sort_list):
-        _sort_func_partial = functools.partial(_sort_func, sort_key=sort_key)
-        if direction == ASCENDING:
-            docs.sort(key=_sort_func_partial)
-        elif direction == DESCENDING:
-            docs.sort(key=_sort_func_partial, reverse=True)
-        # validation on direction happens in cursor
+#     :param docs list[dict]:
+#     :param sort_list list[(key, direction)]
+#     :rtype: None
+#     """
+#     for sort_key, direction in reversed(sort_list):
+#         _sort_func_partial = functools.partial(_sort_func, sort_key=sort_key)
+#         if direction == ASCENDING:
+#             docs.sort(key=_sort_func_partial)
+#         elif direction == DESCENDING:
+#             docs.sort(key=_sort_func_partial, reverse=True)
+#         # validation on direction happens in cursor
 
 
 def _split_filter(filter, metadata):
@@ -863,6 +863,7 @@ class Collection():
         """
         filter = filter or {}
         sort = sort or []
+        print("find_ids", filter, sort, limit, skip, metadata)
 
         if limit == 0:
             return
@@ -873,55 +874,30 @@ class Collection():
         # If we have index ops, we can use those ids as a starting point.
         # otherwise, we need to get all_ids and filter one-by-one
         if indx_ops:
-            doc_ids = _apply_indx_ops(indx_ops)
+            assert False
+            # doc_ids = _apply_indx_ops(indx_ops)
         else:
-            doc_ids = self._engine.list_ids_filter(self._base_location, slow_filters)
+            doc_ids = self._engine.list_ids_filter(self._base_location, slow_filters, sort=sort, limit=limit, skip=skip)
         if not doc_ids:
             return
 
-        if sort:
-            docs_to_return = []
-            for doc_id in doc_ids:
-                doc = self._engine.get_doc(self.full_name, doc_id)
-                # if _doc_matches_slow_filters(doc, slow_filters):
-                #     docs_to_return.append(doc)
-                docs_to_return.append(doc)
-            _sort_docs(docs_to_return, sort)
+        # if sort:
+        #     docs_to_return = []
+        #     for doc_id in doc_ids:
+        #         doc = self._engine.get_doc(self.full_name, doc_id)
+        #         # if _doc_matches_slow_filters(doc, slow_filters):
+        #         #     docs_to_return.append(doc)
+        #         docs_to_return.append(doc)
+        #     _sort_docs(docs_to_return, sort)
 
-            if skip:
-                docs_to_return = docs_to_return[skip:]
+        #     for doc in docs_to_return:
+        #         yield doc['_id']
+        #     return
 
-            if limit is None:
-                for doc in docs_to_return:
-                    yield doc['_id']
-            else:
-                i = 0
-                for doc in docs_to_return:
-                    yield doc['_id']
-                    i += 1
-                    if i == limit:
-                        return
-            return
-
-        if skip:
-            doc_ids = doc_ids[skip:]
-
-        if limit is None:
-            for doc_id in doc_ids:
-                doc = self._engine.get_doc(self.full_name, doc_id)
-                if doc: #and _doc_matches_slow_filters(doc, slow_filters):
-                    yield doc['_id']
-            return
-
-        i = 0
         for doc_id in doc_ids:
             doc = self._engine.get_doc(self.full_name, doc_id)
-            # if _doc_matches_slow_filters(doc, slow_filters):
-            #     yield doc['_id']
-            #     i += 1
-            #     if i == limit:
-            #         return
-            yield doc['_id']
+            if doc: #and _doc_matches_slow_filters(doc, slow_filters):
+                yield doc['_id']
 
     def __find(self, filter, sort=None, limit=None, skip=None, metadata=None, shallow=False):
         """

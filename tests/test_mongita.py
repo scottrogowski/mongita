@@ -259,7 +259,7 @@ def test_find_one(client_class):
     # nested find
     assert coll.find_one({'attrs.species': 'Homo sapien'})['name'] == 'Human'
 
-    # sort
+    # # sort
     assert coll.find_one({}, sort='name')['name'] == 'Honey Badger'
     assert coll.find_one({}, sort=[('name', DESCENDING)])['name'] == 'Secretarybird'
 
@@ -353,167 +353,167 @@ def test_find(client_class):
 #     assert coll.find_one({'continents': 'NA'})['name'] == "Human"
 
 
-# @pytest.mark.parametrize("client_class", CLIENTS)
-# def test_cursor(client_class):
-#     client, coll, imr = setup_many(client_class)
-#     doc_cursor = coll.find()
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_cursor(client_class):
+    client, coll, imr = setup_many(client_class)
+    doc_cursor = coll.find()
 
-#     with pytest.raises(errors.MongitaNotImplementedError):
-#         doc_cursor.allow_disk_use()
-#     with pytest.raises(errors.MongitaNotImplementedError):
-#         doc_cursor.count()
-#     with pytest.raises(AttributeError):
-#         doc_cursor.made_up_method()
+    with pytest.raises(errors.MongitaNotImplementedError):
+        doc_cursor.allow_disk_use()
+    with pytest.raises(errors.MongitaNotImplementedError):
+        doc_cursor.count()
+    with pytest.raises(AttributeError):
+        doc_cursor.made_up_method()
 
-#     # this should be implemented soonish
-#     with pytest.raises(errors.MongitaNotImplementedError):
-#         doc_cursor[0]
+    # this should be implemented soonish
+    with pytest.raises(errors.MongitaNotImplementedError):
+        doc_cursor[0]
 
-#     assert isinstance(doc_cursor, cursor.Cursor)
-#     assert len(list(doc_cursor))
-#     assert not len(list(doc_cursor))  # cursor must be exhaused after one call
+    assert isinstance(doc_cursor, cursor.Cursor)
+    assert len(list(doc_cursor))
+    assert not len(list(doc_cursor))  # cursor must be exhaused after one call
 
-#     # not asc or desc
-#     with pytest.raises(errors.PyMongoError):
-#         list(coll.find().sort('weight', 2))
+    # not asc or desc
+    with pytest.raises(errors.PyMongoError):
+        list(coll.find().sort('weight', 2))
 
-#     # pass in a string
-#     with pytest.raises(errors.PyMongoError):
-#         list(coll.find().sort('weight', "ASCENDING"))
+    # pass in a string
+    with pytest.raises(errors.PyMongoError):
+        list(coll.find().sort('weight', "ASCENDING"))
 
-#     sorted_docs = list(coll.find().sort('weight'))
-#     assert sorted_docs[0]['name'] == 'Placeholder'
-#     assert sorted_docs[1]['name'] == 'Meercat'
-#     assert sorted_docs[-2]['name'] == 'Human'
-#     assert sorted_docs[-1]['name'] == 'Placeholder2'
+    sorted_docs = list(coll.find().sort('weight'))
+    assert sorted_docs[0]['name'] == 'Placeholder'
+    assert sorted_docs[1]['name'] == 'Meercat'
+    assert sorted_docs[-2]['name'] == 'Human'
+    assert sorted_docs[-1]['name'] == 'Placeholder2'
 
-#     sorted_docs = list(coll.find().sort('weight', ASCENDING))
-#     assert sorted_docs[0]['name'] == 'Placeholder'
-#     assert sorted_docs[1]['name'] == 'Meercat'
-#     assert sorted_docs[-2]['name'] == 'Human'
-#     assert sorted_docs[-1]['name'] == 'Placeholder2'
+    sorted_docs = list(coll.find().sort('weight', ASCENDING))
+    assert sorted_docs[0]['name'] == 'Placeholder'
+    assert sorted_docs[1]['name'] == 'Meercat'
+    assert sorted_docs[-2]['name'] == 'Human'
+    assert sorted_docs[-1]['name'] == 'Placeholder2'
 
-#     sorted_docs = list(coll.find().sort('weight', DESCENDING))
-#     assert sorted_docs[0]['name'] == 'Placeholder2'
-#     assert sorted_docs[1]['name'] == 'Human'
-#     assert sorted_docs[-2]['name'] == 'Meercat'
-#     assert sorted_docs[-1]['name'] == 'Placeholder'
+    sorted_docs = list(coll.find().sort('weight', DESCENDING))
+    assert sorted_docs[0]['name'] == 'Placeholder2'
+    assert sorted_docs[1]['name'] == 'Human'
+    assert sorted_docs[-2]['name'] == 'Meercat'
+    assert sorted_docs[-1]['name'] == 'Placeholder'
 
-#     sorted_docs = list(coll.find().sort('name', DESCENDING))
-#     assert sorted_docs[0]['name'] == 'Secretarybird'
-#     assert sorted_docs[-1]['name'] == 'Honey Badger'
+    sorted_docs = list(coll.find().sort('name', DESCENDING))
+    assert sorted_docs[0]['name'] == 'Secretarybird'
+    assert sorted_docs[-1]['name'] == 'Honey Badger'
 
-#     sorted_docs = list(coll.find().sort([('name', ASCENDING)]))
-#     assert sorted_docs[0]['name'] == 'Honey Badger'
-#     assert sorted_docs[-1]['name'] == 'Secretarybird'
+    sorted_docs = list(coll.find().sort([('name', ASCENDING)]))
+    assert sorted_docs[0]['name'] == 'Honey Badger'
+    assert sorted_docs[-1]['name'] == 'Secretarybird'
 
-#     sorted_docs = list(coll.find().sort([('name', ASCENDING)]))
-#     assert sorted_docs[0]['name'] == 'Honey Badger'
-#     assert sorted_docs[-1]['name'] == 'Secretarybird'
+    sorted_docs = list(coll.find().sort([('name', ASCENDING)]))
+    assert sorted_docs[0]['name'] == 'Honey Badger'
+    assert sorted_docs[-1]['name'] == 'Secretarybird'
 
-#     sorted_docs = list(coll.find().sort([('kingdom', ASCENDING),
-#                                          ('weight', DESCENDING)]))
-#     assert sorted_docs[0].get('kingdom') == None
-#     assert sorted_docs[1].get('kingdom') == 'bird'
-#     assert sorted_docs[-1].get('kingdom') == 'reptile'
-#     assert sorted_docs[2].get('kingdom') == 'cat'
-#     assert sorted_docs[3].get('kingdom') == 'mammal'
-#     assert sorted_docs[3]['name'] == 'Human'
-#     assert sorted_docs[-2].get('kingdom') == 'mammal'
-#     assert sorted_docs[-2]['name'] == 'Meercat'
+    sorted_docs = list(coll.find().sort([('kingdom', ASCENDING),
+                                         ('weight', DESCENDING)]))
+    assert sorted_docs[0].get('kingdom') == None
+    assert sorted_docs[1].get('kingdom') == 'bird'
+    assert sorted_docs[-1].get('kingdom') == 'reptile'
+    assert sorted_docs[2].get('kingdom') == 'cat'
+    assert sorted_docs[3].get('kingdom') == 'mammal'
+    assert sorted_docs[3]['name'] == 'Human'
+    assert sorted_docs[-2].get('kingdom') == 'mammal'
+    assert sorted_docs[-2]['name'] == 'Meercat'
 
-#     sorted_docs = list(coll.find().sort([('kingdom', DESCENDING),
-#                                          ('weight', ASCENDING)]))
-#     assert sorted_docs[0].get('kingdom') == 'reptile'
-#     assert sorted_docs[-2].get('kingdom') == 'bird'
-#     assert sorted_docs[-1].get('kingdom') == None
-#     assert sorted_docs[1].get('kingdom') == 'mammal'
-#     assert sorted_docs[1]['name'] == 'Meercat'
-#     assert sorted_docs[-4].get('kingdom') == 'mammal'
-#     assert sorted_docs[-4]['name'] == 'Human'
+    sorted_docs = list(coll.find().sort([('kingdom', DESCENDING),
+                                         ('weight', ASCENDING)]))
+    assert sorted_docs[0].get('kingdom') == 'reptile'
+    assert sorted_docs[-2].get('kingdom') == 'bird'
+    assert sorted_docs[-1].get('kingdom') == None
+    assert sorted_docs[1].get('kingdom') == 'mammal'
+    assert sorted_docs[1]['name'] == 'Meercat'
+    assert sorted_docs[-4].get('kingdom') == 'mammal'
+    assert sorted_docs[-4]['name'] == 'Human'
 
-#     # next should would as expected
-#     doc_cursor = coll.find().sort('name')
-#     assert next(doc_cursor)['name'] == 'Honey Badger'
-#     assert next(doc_cursor)['name'] == 'Human'
-#     assert doc_cursor.next()['name'] == 'Indian grey mongoose'
+    # next should would as expected
+    doc_cursor = coll.find().sort('name')
+    assert next(doc_cursor)['name'] == 'Honey Badger'
+    assert next(doc_cursor)['name'] == 'Human'
+    assert doc_cursor.next()['name'] == 'Indian grey mongoose'
 
-#     # clone should reset
-#     doc_cursor = doc_cursor.clone()
-#     assert next(doc_cursor)['name'] == 'Honey Badger'
-#     assert next(doc_cursor)['name'] == 'Human'
-#     assert doc_cursor.next()['name'] == 'Indian grey mongoose'
+    # clone should reset
+    doc_cursor = doc_cursor.clone()
+    assert next(doc_cursor)['name'] == 'Honey Badger'
+    assert next(doc_cursor)['name'] == 'Human'
+    assert doc_cursor.next()['name'] == 'Indian grey mongoose'
 
-#     # sorting shouldn't happen after iteration has begun
-#     with pytest.raises(errors.InvalidOperation):
-#         doc_cursor.sort('kingdom')
+    # sorting shouldn't happen after iteration has begun
+    with pytest.raises(errors.InvalidOperation):
+        doc_cursor.sort('kingdom')
 
-#     # test bad format
-#     with pytest.raises(errors.PyMongoError):
-#         coll.find().sort([(ASCENDING, 'kingdom')])
+    # test bad format
+    with pytest.raises(errors.PyMongoError):
+        coll.find().sort([(ASCENDING, 'kingdom')])
 
-#     # test close
-#     doc_cursor.close()
-#     with pytest.raises(StopIteration):
-#         next(doc_cursor)
-
-
-# @pytest.mark.parametrize("client_class", CLIENTS)
-# def test_limit(client_class):
-#     client, coll, imr = setup_many(client_class)
-#     with pytest.raises(TypeError):
-#         coll.find().limit(2.0)
-
-#     assert len(list(coll.find().limit(0))) == 0
-#     assert len(list(coll.find().limit(3))) == 3
-#     assert set(d['name'] for d in
-#                coll.find().sort('name').limit(2)) == set(['Honey Badger', 'Human'])
-#     assert set(d['name'] for d in
-#                coll.find().limit(2).sort('name')) == set(['Honey Badger', 'Human'])
-
-#     # limiting shouldn't happen after iteration has begun
-#     doc_cursor = coll.find()
-#     next(doc_cursor)
-#     with pytest.raises(errors.InvalidOperation):
-#         doc_cursor.limit(2)
+    # test close
+    doc_cursor.close()
+    with pytest.raises(StopIteration):
+        next(doc_cursor)
 
 
-# @pytest.mark.parametrize("client_class", CLIENTS)
-# def test_skip(client_class):
-#     client, coll, imr = setup_many(client_class)
-#     with pytest.raises(TypeError):
-#         coll.find({}).skip(2.0)
-#     with pytest.raises(TypeError):
-#         coll.find({}).skip("2")
-#     with pytest.raises(ValueError):
-#         coll.find({}).skip(-1)
-#     with pytest.raises(TypeError):
-#         next(coll.find({}, skip=2.0))
-#     with pytest.raises(TypeError):
-#         next(coll.find({}, skip="2"))
-#     with pytest.raises(ValueError):
-#         next(coll.find({}, skip=-1))
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_limit(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(TypeError):
+        coll.find().limit(2.0)
 
-#     assert len(list(coll.find(skip=0))) == LEN_TEST_DOCS
-#     assert len(list(coll.find(skip=3))) == LEN_TEST_DOCS - 3
-#     assert len(list(coll.find(skip=3, limit=1))) == 1
+    assert len(list(coll.find().limit(0))) == 0
+    assert len(list(coll.find().limit(3))) == 3
+    assert set(d['name'] for d in
+               coll.find().sort('name').limit(2)) == set(['Honey Badger', 'Human'])
+    assert set(d['name'] for d in
+               coll.find().limit(2).sort('name')) == set(['Honey Badger', 'Human'])
 
-#     assert len(list(coll.find().skip(0))) == LEN_TEST_DOCS
-#     assert len(list(coll.find().skip(3))) == LEN_TEST_DOCS - 3
-#     assert len(list(coll.find().skip(3).limit(1))) == 1
+    # limiting shouldn't happen after iteration has begun
+    doc_cursor = coll.find()
+    next(doc_cursor)
+    with pytest.raises(errors.InvalidOperation):
+        doc_cursor.limit(2)
 
-#     assert len(list(coll.find(skip=2).limit(2))) == 2
-#     assert len(list(coll.find(limit=3).skip(2))) == 3
 
-#     assert set(d['name'] for d in coll.find(skip=1).limit(1).sort('name')) == {'Human'}
-#     assert set(d['name'] for d in coll.find().sort('name').skip(2).limit(2)) == \
-#         {'Indian grey mongoose', 'King Cobra'}
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_skip(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(TypeError):
+        coll.find({}).skip(2.0)
+    with pytest.raises(TypeError):
+        coll.find({}).skip("2")
+    with pytest.raises(ValueError):
+        coll.find({}).skip(-1)
+    with pytest.raises(TypeError):
+        next(coll.find({}, skip=2.0))
+    with pytest.raises(TypeError):
+        next(coll.find({}, skip="2"))
+    with pytest.raises(ValueError):
+        next(coll.find({}, skip=-1))
 
-#     # skipping shouldn't happen after iteration has begun
-#     doc_cursor = coll.find()
-#     next(doc_cursor)
-#     with pytest.raises(errors.InvalidOperation):
-#         doc_cursor.skip(2)
+    assert len(list(coll.find(skip=0))) == LEN_TEST_DOCS
+    assert len(list(coll.find(skip=3))) == LEN_TEST_DOCS - 3
+    assert len(list(coll.find(skip=3, limit=1))) == 1
+
+    assert len(list(coll.find().skip(0))) == LEN_TEST_DOCS
+    assert len(list(coll.find().skip(3))) == LEN_TEST_DOCS - 3
+    assert len(list(coll.find().skip(3).limit(1))) == 1
+
+    assert len(list(coll.find(skip=2).limit(2))) == 2
+    assert len(list(coll.find(limit=3).skip(2))) == 3
+
+    assert set(d['name'] for d in coll.find(skip=1).limit(1).sort('name')) == {'Human'}
+    assert set(d['name'] for d in coll.find().sort('name').skip(2).limit(2)) == \
+        {'Indian grey mongoose', 'King Cobra'}
+
+    # skipping shouldn't happen after iteration has begun
+    doc_cursor = coll.find()
+    next(doc_cursor)
+    with pytest.raises(errors.InvalidOperation):
+        doc_cursor.skip(2)
 
 
 # @pytest.mark.parametrize("client_class", CLIENTS)

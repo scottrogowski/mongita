@@ -274,68 +274,90 @@ class SqliteEngine(Engine):
         #     return list(map(str, keys))
         # return list(map(str, itertools.islice(keys, limit)))
 
-    def list_ids_filter(self, collection, filter, limit=None):
+    def list_ids_filter(self, collection, filter, sort=None, limit=None, skip=None):
         dbname, tablename = collection.split('.', 1)
         _, cur = self.cur(dbname)
 
-        print('filter', filter)
+        print("FILTER", filter)
+        print("LIMIT", limit)
+        print("SKIP", skip)
+        print("SORT", sort)
 
         # get columns
         cur.execute(f'PRAGMA table_info({tablename})')
         columns = [row[1] for row in cur.fetchall()]
         columns = [c for c in columns if c != 'data']
 
-        if not filter:
-            cur.execute(f'SELECT _id FROM {tablename}')
-            return [row[0] for row in cur.fetchall()]
 
         where = []
         params = []
 
-        for k, query_ops in filter.items():
-            if k not in columns:
-                k = f'json_extract({tablename}.data, "$.{k}")'
+        k_dict = {}
 
-            if isinstance(query_ops, (str, bson.ObjectId)):
-                where = [f'{k} = ?']
-                params.append(mkparam(query_ops))
-                continue
+        if not filter:
+            where = []
+        else:
+            for k, query_ops in filter.items():
+                if k not in columns:
+                    k = f'json_extract({tablename}.data, "$.{k}")'
 
-            if any(k.startswith('$') for k in query_ops.keys()):
-                for op, val in query_ops.items():
-                    if op == '$eq':
-                        where.append(f'{k} = ?')
-                    elif op == '$ne':
-                        where.append(f'{k} != ?')
-                    elif op == '$gt':
-                        where.append(f'{k} > ?')
-                    elif op == '$gte':
-                        where.append(f'{k} >= ?')
-                    elif op == '$lt':
-                        where.append(f'{k} < ?')
-                    elif op == '$lte':
-                        where.append(f'{k} <= ?')
-                    elif op == '$in':
-                        where.append(f'{k} IN ({",".join(["?"]*len(val))})')
-                    elif op == '$nin':
-                        where.append(f'{k} NOT IN ({",".join(["?"]*len(val))})')
-                    else:
-                        raise ValueError(f'Unknown operator {op}')
+                if isinstance(query_ops, (str, bson.ObjectId)):
+                    where = [f'{k} = ?']
+                    params.append(mkparam(query_ops))
+                    continue
 
-                    if op in ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte']:
-                        params.append(mkparam(val))
-                    elif op in ['$in', '$nin']:
-                        params += [mkparam(v) for v in val]
-            else:
-                where.append(f'{k} = ?')
-                params.append(mkparam(query_ops))
+                if any(k.startswith('$') for k in query_ops.keys()):
+                    for op, val in query_ops.items():
+                        if op == '$eq':
+                            where.append(f'{k} = ?')
+                        elif op == '$ne':
+                            where.append(f'{k} != ?')
+                        elif op == '$gt':
+                            where.append(f'{k} > ?')
+                        elif op == '$gte':
+                            where.append(f'{k} >= ?')
+                        elif op == '$lt':
+                            where.append(f'{k} < ?')
+                        elif op == '$lte':
+                            where.append(f'{k} <= ?')
+                        elif op == '$in':
+                            where.append(f'{k} IN ({",".join(["?"]*len(val))})')
+                        elif op == '$nin':
+                            where.append(f'{k} NOT IN ({",".join(["?"]*len(val))})')
+                        else:
+                            raise ValueError(f'Unknown operator {op}')
 
-        print("FILTER", filter)
+                        if op in ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte']:
+                            params.append(mkparam(val))
+                        elif op in ['$in', '$nin']:
+                            params += [mkparam(v) for v in val]
+                else:
+                    where.append(f'{k} = ?')
+                    params.append(mkparam(query_ops))
+
         print("WHERE", where)
         print("PARAMS", params)
-        where = " AND ".join(where)
-        query = f'SELECT _id FROM {tablename} WHERE ({where})'
-        print("QUERY", query)
+
+        query = f'SELECT _id FROM {tablename}'
+
+        if where:
+            where = " AND ".join(where)
+            query += f' WHERE {where}'
+        if sort:
+            sorters = []
+            for k, direction in sort:
+                if k not in columns:
+                    k = f'json_extract({tablename}.data, "$.{k}")'
+                sorters.append(f'{k} {"ASC" if direction == 1 else "DESC"}')
+            query += f' ORDER BY {",".join(sorters)}'
+        if limit is not None:
+            query += f' LIMIT {limit}'
+        if skip:
+            if limit is None:
+                query += f' LIMIT -1'
+            query += f' OFFSET {skip}'
+        print("QUERY IS", query)
+
         cur.execute(query, params)
         ret = [row[0] for row in cur.fetchall()]
         print("RET", ret)
