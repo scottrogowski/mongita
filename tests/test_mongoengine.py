@@ -2,6 +2,7 @@ import os
 import sys
 
 import pymongo
+from bson import UuidRepresentation
 
 sys.path.append(os.getcwd().split('/tests')[0])
 
@@ -42,7 +43,7 @@ def test_mongoengine():
         def __repr__(self):
             return f"POST: {self.title} by {self.author} tagged {self.tags}"
 
-    mongoengine.connect('mongita_test_db')
+    mongoengine.connect('mongita_test_db', uuidRepresentation=UuidRepresentation.STANDARD)
 
     post1 = Post(title='Fun with MongoEngine')
     post1.content = 'Took a look at MongoEngine today, looks pretty cool.'

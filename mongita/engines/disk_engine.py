@@ -7,6 +7,7 @@ import threading
 from sys import intern as itrn
 
 import bson
+from bson import CodecOptions, UuidRepresentation
 
 from ..common import MetaStorageObject, secure_filename
 from .engine_common import Engine
@@ -25,6 +26,7 @@ class DiskEngine(Engine):
         self._file_attrs = collections.defaultdict(dict)
         self.replaced = False
         self.lock = threading.RLock()
+        self.codec_options = CodecOptions(uuid_representation=UuidRepresentation.STANDARD)
 
     @staticmethod
     def create(base_storage_path):
@@ -60,7 +62,7 @@ class DiskEngine(Engine):
         file_attrs_path = self._get_full_path(collection, '$.file_attrs')
         try:
             with open(file_attrs_path, 'rb') as f:
-                self._file_attrs[itrn(collection)] = bson.decode(f.read())
+                self._file_attrs[itrn(collection)] = bson.decode(f.read(), self.codec_options)
         except FileNotFoundError:
             self._file_attrs[itrn(collection)] = {
                 'loc_idx': {},
@@ -76,12 +78,12 @@ class DiskEngine(Engine):
             self._file_attrs[itrn(collection)]['loc_idx'][itrn(doc_id)] = pos
 
     def doc_exists(self, collection, doc_id):
-        if str(doc_id) in self._get_file_attrs(collection):
+        if self.hash_id(doc_id) in self._get_file_attrs(collection):
             return True
         return False
 
     def get_doc(self, collection, doc_id):
-        doc_id = str(doc_id)
+        doc_id = self.hash_id(doc_id)
         try:
             return self._cache[itrn(collection)][itrn(doc_id)]
         except KeyError:
@@ -93,17 +95,17 @@ class DiskEngine(Engine):
         doc_len_bytes = fh.read(4)
         doc_len = int.from_bytes(doc_len_bytes, 'little', signed=True)
         assert doc_len
-        doc = bson.decode(doc_len_bytes + fh.read(doc_len - 4))
+        doc = bson.decode(doc_len_bytes + fh.read(doc_len - 4), self.codec_options)
         self._cache[itrn(collection)][itrn(doc_id)] = doc
         return doc
 
     def put_doc(self, collection, doc, no_overwrite=False):
-        doc_id = str(doc['_id'])
+        doc_id = self.hash_id(doc['_id'])
         if no_overwrite and self.doc_exists(collection, doc_id):
             return False
         self._cache[itrn(collection)][itrn(doc_id)] = doc
 
-        encoded_doc = bson.encode(doc)
+        encoded_doc = bson.encode(doc, codec_options=self.codec_options)
         fh = self._get_coll_fh(collection)
         pos = self._get_file_attrs(collection).get(str(doc_id))
         if pos is not None:
@@ -128,7 +130,7 @@ class DiskEngine(Engine):
         return True
 
     def delete_doc(self, collection, doc_id):
-        doc_id = str(doc_id)
+        doc_id = self.hash_id(doc_id)
         pos = self._get_file_attrs(collection)[doc_id]
         fh = self._get_coll_fh(collection)
         fh.seek(pos)
@@ -189,9 +191,9 @@ class DiskEngine(Engine):
         for doc_id in self.list_ids(collection):
             try:
                 doc = _cache_collection[itrn(doc_id)]
-                encoded_docs[doc_id] = bson.encode(doc)
+                encoded_docs[doc_id] = bson.encode(doc, codec_options=self.codec_options)
             except KeyError:
-                pos = self._get_file_attrs(collection)[str(doc_id)]
+                pos = self._get_file_attrs(collection)[self.hash_id(doc_id)]
                 fh = self._get_coll_fh(collection)
                 fh.seek(pos)
                 doc_len_bytes = fh.read(4)
@@ -219,7 +221,7 @@ class DiskEngine(Engine):
         with open(file_attrs_path, 'wb') as f:
             f.write(bson.encode(self._file_attrs.get(collection, {'total_bytes': 0,
                                                                   'spare_bytes': 0,
-                                                                  'loc_idx': {}})))
+                                                                  'loc_idx': {}}), codec_options=self.codec_options))
         return True
 
     def delete_dir(self, collection):
