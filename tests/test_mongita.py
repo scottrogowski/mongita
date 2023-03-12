@@ -1332,7 +1332,11 @@ def test_indicies_basic(client_class):
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
     assert len(coll.index_information()) == 2
-    coll.index_information()[1] == {'kingdom_1': {'key': [('kingdom', 1)]}}
+
+    cif = coll.index_information()
+    assert "kingdom_1" in cif
+    assert cif["kingdom_1"] == {'key': [('kingdom', 1)]}
+
     assert coll.count_documents({'kingdom': 'mammal'}) == \
         sum(1 for d in TEST_DOCS if d.get('kingdom') == 'mammal')
     assert coll.count_documents({'kingdom': 'reptile'}) == \
