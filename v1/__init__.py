@@ -11,7 +11,6 @@ from . import mongitasync
 mongita_client = mongita_client
 MongitaClientMemory = mongita_client.MongitaClientMemory
 MongitaClientDisk = mongita_client.MongitaClientDisk
-MongitaClientSqlite = mongita_client.MongitaClientSqlite
 
 database = database
 collection = collection

@@ -8,7 +8,7 @@ from .common import support_alert, ok_name, MetaStorageObject
 from .command_cursor import CommandCursor
 from .database import Database
 from .errors import MongitaNotImplementedError, InvalidName
-from .engines import disk_engine, memory_engine, sqlite_engine
+from .engines import disk_engine, memory_engine
 from .read_concern import ReadConcern
 from .write_concern import WriteConcern
 
@@ -170,21 +170,3 @@ class MongitaClientMemory(MongitaClient):
 
     def __repr__(self):
         return "MongitaClientMemory()"
-
-class MongitaClientSqlite(MongitaClient):
-    """
-    The MongoClientSqlite persists its state on the disk. It is meant to be
-    compatible in most ways with pymongo's MongoClient.
-    """
-    def __init__(self, host=DEFAULT_STORAGE_DIR, **kwargs):
-        host = host or DEFAULT_STORAGE_DIR
-        if isinstance(host, list):
-            # fix for mongoengine passing a list to us
-            host = host[0]
-        self.engine = sqlite_engine.SqliteEngine.create(host)
-        self.is_primary = True
-        super().__init__()
-
-    def __repr__(self):
-        path = self.engine.base_storage_path
-        return "MongitaClientSqlite(path=%s)" % path

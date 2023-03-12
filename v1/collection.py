@@ -194,30 +194,30 @@ def _doc_matches_agg(doc_v, query_ops):
         return doc_v == query_ops
 
 
-# def _doc_matches_slow_filters(doc, slow_filters):
-#     """
-#     Given an entire doc, return whether that doc matches every filter item in the
-#     slow_filters dict. A slow_filter is just the set of filters that we didn't
-#     have an index for.
+def _doc_matches_slow_filters(doc, slow_filters):
+    """
+    Given an entire doc, return whether that doc matches every filter item in the
+    slow_filters dict. A slow_filter is just the set of filters that we didn't
+    have an index for.
 
-#     :param doc dict:
-#     :param slow_filters dict:
-#     :rtype: bool
-#     """
-#     for doc_key, query_ops in slow_filters.items():
-#         if isinstance(query_ops, dict):
-#             doc_v = _get_item_from_doc(doc, doc_key)
-#             if _doc_matches_agg(doc_v, query_ops):
-#                 continue
-#             return False
+    :param doc dict:
+    :param slow_filters dict:
+    :rtype: bool
+    """
+    for doc_key, query_ops in slow_filters.items():
+        if isinstance(query_ops, dict):
+            doc_v = _get_item_from_doc(doc, doc_key)
+            if _doc_matches_agg(doc_v, query_ops):
+                continue
+            return False
 
-#         item_from_doc = _get_item_from_doc(doc, doc_key)
-#         if isinstance(item_from_doc, list) and query_ops in item_from_doc:
-#             continue
-#         if item_from_doc == query_ops:
-#             continue
-#         return False
-#     return True
+        item_from_doc = _get_item_from_doc(doc, doc_key)
+        if isinstance(item_from_doc, list) and query_ops in item_from_doc:
+            continue
+        if item_from_doc == query_ops:
+            continue
+        return False
+    return True
 
 
 def _ids_given_irange_filters(matched_keys, idx, **kwargs):
@@ -757,55 +757,55 @@ class Collection():
         success_docs = []
         exception = None
         with self._engine.lock:
-            # metadata = self.__get_metadata()
+            metadata = self.__get_metadata()
             for doc in ready_docs:
                 try:
                     self.__insert_one(doc)
                     success_docs.append(doc)
                 except Exception as ex:
                     if ordered:
-                        # self.__update_indicies(success_docs, metadata)
+                        self.__update_indicies(success_docs, metadata)
                         raise MongitaError("Ending insert_many because of error") from ex
                     exception = ex
                     continue
-            # self.__update_indicies(success_docs, metadata)
+            self.__update_indicies(success_docs, metadata)
         if exception:
             raise MongitaError("Not all documents inserted") from exception
         return InsertManyResult(success_docs)
 
-    # @support_alert
-    # def replace_one(self, filter, replacement, upsert=False):
-    #     """
-    #     Replace one document. If no document was found with the filter,
-    #     and upsert is True, insert the replacement.
+    @support_alert
+    def replace_one(self, filter, replacement, upsert=False):
+        """
+        Replace one document. If no document was found with the filter,
+        and upsert is True, insert the replacement.
 
-    #     :param filter dict:
-    #     :param replacement dict:
-    #     :param bool upsert:
-    #     :rtype: results.UpdateResult
-    #     """
-    #     filter = filter or {}
-    #     _validate_filter(filter)
-    #     _validate_doc(replacement)
-    #     self.__create()
+        :param filter dict:
+        :param replacement dict:
+        :param bool upsert:
+        :rtype: results.UpdateResult
+        """
+        filter = filter or {}
+        _validate_filter(filter)
+        _validate_doc(replacement)
+        self.__create()
 
-    #     replacement = copy.deepcopy(replacement)
+        replacement = copy.deepcopy(replacement)
 
-    #     with self._engine.lock:
-    #         doc_id = self.__find_one_id(filter, upsert=upsert)
-    #         if not doc_id:
-    #             if upsert:
-    #                 metadata = self.__get_metadata()
-    #                 replacement['_id'] = replacement.get('_id') or bson.ObjectId()
-    #                 self.__insert_one(replacement)
-    #                 self.__update_indicies([replacement], metadata)
-    #                 return UpdateResult(0, 1, replacement['_id'])
-    #             return UpdateResult(0, 0)
-    #         replacement['_id'] = doc_id
-    #         metadata = self.__get_metadata()
-    #         assert self._engine.put_doc(self.full_name, replacement)
-    #         self.__update_indicies([replacement], metadata)
-    #         return UpdateResult(1, 1)
+        with self._engine.lock:
+            doc_id = self.__find_one_id(filter, upsert=upsert)
+            if not doc_id:
+                if upsert:
+                    metadata = self.__get_metadata()
+                    replacement['_id'] = replacement.get('_id') or bson.ObjectId()
+                    self.__insert_one(replacement)
+                    self.__update_indicies([replacement], metadata)
+                    return UpdateResult(0, 1, replacement['_id'])
+                return UpdateResult(0, 0)
+            replacement['_id'] = doc_id
+            metadata = self.__get_metadata()
+            assert self._engine.put_doc(self.full_name, replacement)
+            self.__update_indicies([replacement], metadata)
+            return UpdateResult(1, 1)
 
     def __find_one_id(self, filter, sort=None, skip=None, upsert=False):
         """
@@ -840,7 +840,6 @@ class Collection():
         :rtype: dict|None
         """
         doc_id = self.__find_one_id(filter, sort, skip)
-        print("one doc_id", doc_id)
         if doc_id:
             doc = self._engine.get_doc(self.full_name, doc_id)
             if doc:
@@ -875,7 +874,7 @@ class Collection():
         if indx_ops:
             doc_ids = _apply_indx_ops(indx_ops)
         else:
-            doc_ids = self._engine.list_ids_filter(self._base_location, slow_filters)
+            doc_ids = self._engine.list_ids(self._base_location)
         if not doc_ids:
             return
 
@@ -883,9 +882,8 @@ class Collection():
             docs_to_return = []
             for doc_id in doc_ids:
                 doc = self._engine.get_doc(self.full_name, doc_id)
-                # if _doc_matches_slow_filters(doc, slow_filters):
-                #     docs_to_return.append(doc)
-                docs_to_return.append(doc)
+                if _doc_matches_slow_filters(doc, slow_filters):
+                    docs_to_return.append(doc)
             _sort_docs(docs_to_return, sort)
 
             if skip:
@@ -909,19 +907,18 @@ class Collection():
         if limit is None:
             for doc_id in doc_ids:
                 doc = self._engine.get_doc(self.full_name, doc_id)
-                if doc: #and _doc_matches_slow_filters(doc, slow_filters):
+                if doc and _doc_matches_slow_filters(doc, slow_filters):
                     yield doc['_id']
             return
 
         i = 0
         for doc_id in doc_ids:
             doc = self._engine.get_doc(self.full_name, doc_id)
-            # if _doc_matches_slow_filters(doc, slow_filters):
-            #     yield doc['_id']
-            #     i += 1
-            #     if i == limit:
-            #         return
-            yield doc['_id']
+            if _doc_matches_slow_filters(doc, slow_filters):
+                yield doc['_id']
+                i += 1
+                if i == limit:
+                    return
 
     def __find(self, filter, sort=None, limit=None, skip=None, metadata=None, shallow=False):
         """
@@ -993,120 +990,120 @@ class Collection():
 
         return Cursor(self.__find, filter, sort, limit, skip)
 
-    # def __update_doc(self, doc_id, update):
-    #     """
-    #     Given a doc_id and an update dict, find the document and safely update it.
-    #     Returns the updated document
+    def __update_doc(self, doc_id, update):
+        """
+        Given a doc_id and an update dict, find the document and safely update it.
+        Returns the updated document
 
-    #     :param doc_id str:
-    #     :param update dict:
-    #     :rtype: dict
-    #     """
-    #     doc = self._engine.get_doc(self.full_name, doc_id)
-    #     for update_op, update_op_dict in update.items():
-    #         _update_item_in_doc(update_op, update_op_dict, doc)
-    #     assert self._engine.put_doc(self.full_name, doc)
-    #     return dict(doc)
+        :param doc_id str:
+        :param update dict:
+        :rtype: dict
+        """
+        doc = self._engine.get_doc(self.full_name, doc_id)
+        for update_op, update_op_dict in update.items():
+            _update_item_in_doc(update_op, update_op_dict, doc)
+        assert self._engine.put_doc(self.full_name, doc)
+        return dict(doc)
 
-    # @support_alert
-    # def update_one(self, filter, update, upsert=False):
-    #     """
-    #     Find one document matching the filter and update it.
-    #     The 'upsert' parameter is not supported.
+    @support_alert
+    def update_one(self, filter, update, upsert=False):
+        """
+        Find one document matching the filter and update it.
+        The 'upsert' parameter is not supported.
 
-    #     :param filter dict:
-    #     :param update dict:
-    #     :param upsert bool:
-    #     :rtype: results.UpdateResult
-    #     """
+        :param filter dict:
+        :param update dict:
+        :param upsert bool:
+        :rtype: results.UpdateResult
+        """
 
-    #     _validate_filter(filter)
-    #     _validate_update(update)
-    #     self.__create()
-    #     if upsert:
-    #         raise MongitaNotImplementedError("Mongita does not support 'upsert' on "
-    #                                          "update operations. Use `replace_one`.")
+        _validate_filter(filter)
+        _validate_update(update)
+        self.__create()
+        if upsert:
+            raise MongitaNotImplementedError("Mongita does not support 'upsert' on "
+                                             "update operations. Use `replace_one`.")
 
-    #     with self._engine.lock:
-    #         doc_ids = list(self.__find_ids(filter))
-    #         matched_count = len(doc_ids)
-    #         if not matched_count:
-    #             return UpdateResult(matched_count, 0)
-    #         metadata = self.__get_metadata()
-    #         doc = self.__update_doc(doc_ids[0], update)
-    #         self.__update_indicies([doc], metadata)
-    #     return UpdateResult(matched_count, 1)
+        with self._engine.lock:
+            doc_ids = list(self.__find_ids(filter))
+            matched_count = len(doc_ids)
+            if not matched_count:
+                return UpdateResult(matched_count, 0)
+            metadata = self.__get_metadata()
+            doc = self.__update_doc(doc_ids[0], update)
+            self.__update_indicies([doc], metadata)
+        return UpdateResult(matched_count, 1)
 
-    # @support_alert
-    # def update_many(self, filter, update, upsert=False):
-    #     """
-    #     Update every document matched by the filter.
-    #     The 'upsert' parameter is not supported.
+    @support_alert
+    def update_many(self, filter, update, upsert=False):
+        """
+        Update every document matched by the filter.
+        The 'upsert' parameter is not supported.
 
-    #     :param filter dict:
-    #     :param update dict:
-    #     :param upsert bool:
-    #     :rtype: results.UpdateResult
-    #     """
-    #     _validate_filter(filter)
-    #     _validate_update(update)
-    #     self.__create()
-    #     if upsert:
-    #         raise MongitaNotImplementedError("Mongita does not support 'upsert' "
-    #                                          "on update operations. Use `replace_one`.")
+        :param filter dict:
+        :param update dict:
+        :param upsert bool:
+        :rtype: results.UpdateResult
+        """
+        _validate_filter(filter)
+        _validate_update(update)
+        self.__create()
+        if upsert:
+            raise MongitaNotImplementedError("Mongita does not support 'upsert' "
+                                             "on update operations. Use `replace_one`.")
 
-    #     success_docs = []
-    #     matched_cnt = 0
-    #     with self._engine.lock:
-    #         doc_ids = list(self.__find_ids(filter))
-    #         metadata = self.__get_metadata()
-    #         for doc_id in doc_ids:
-    #             doc = self.__update_doc(doc_id, update)
-    #             success_docs.append(doc)
-    #             matched_cnt += 1
-    #         self.__update_indicies(success_docs, metadata)
-    #     return UpdateResult(matched_cnt, len(success_docs))
+        success_docs = []
+        matched_cnt = 0
+        with self._engine.lock:
+            doc_ids = list(self.__find_ids(filter))
+            metadata = self.__get_metadata()
+            for doc_id in doc_ids:
+                doc = self.__update_doc(doc_id, update)
+                success_docs.append(doc)
+                matched_cnt += 1
+            self.__update_indicies(success_docs, metadata)
+        return UpdateResult(matched_cnt, len(success_docs))
 
-    # @support_alert
-    # def delete_one(self, filter):
-    #     """
-    #     Delete one document matching the filter.
+    @support_alert
+    def delete_one(self, filter):
+        """
+        Delete one document matching the filter.
 
-    #     :param filter dict:
-    #     :rtype: results.DeleteResult
-    #     """
-    #     _validate_filter(filter)
-    #     self.__create()
+        :param filter dict:
+        :rtype: results.DeleteResult
+        """
+        _validate_filter(filter)
+        self.__create()
 
-    #     with self._engine.lock:
-    #         doc_id = self.__find_one_id(filter)
-    #         if not doc_id:
-    #             return DeleteResult(0)
-    #         metadata = self.__get_metadata()
-    #         self._engine.delete_doc(self.full_name, doc_id)
-    #         self.__update_indicies_deletes({doc_id}, metadata)
-    #     return DeleteResult(1)
+        with self._engine.lock:
+            doc_id = self.__find_one_id(filter)
+            if not doc_id:
+                return DeleteResult(0)
+            metadata = self.__get_metadata()
+            self._engine.delete_doc(self.full_name, doc_id)
+            self.__update_indicies_deletes({doc_id}, metadata)
+        return DeleteResult(1)
 
-    # @support_alert
-    # def delete_many(self, filter):
-    #     """
-    #     Delete all documents matching the filter.
+    @support_alert
+    def delete_many(self, filter):
+        """
+        Delete all documents matching the filter.
 
-    #     :param filter dict:
-    #     :rtype: results.DeleteResult
-    #     """
-    #     _validate_filter(filter)
-    #     self.__create()
+        :param filter dict:
+        :rtype: results.DeleteResult
+        """
+        _validate_filter(filter)
+        self.__create()
 
-    #     success_deletes = set()
-    #     with self._engine.lock:
-    #         doc_ids = list(self.__find_ids(filter))
-    #         metadata = self.__get_metadata()
-    #         for doc_id in doc_ids:
-    #             if self._engine.delete_doc(self.full_name, doc_id):
-    #                 success_deletes.add(doc_id)
-    #         self.__update_indicies_deletes(success_deletes, metadata)
-    #     return DeleteResult(len(success_deletes))
+        success_deletes = set()
+        with self._engine.lock:
+            doc_ids = list(self.__find_ids(filter))
+            metadata = self.__get_metadata()
+            for doc_id in doc_ids:
+                if self._engine.delete_doc(self.full_name, doc_id):
+                    success_deletes.add(doc_id)
+            self.__update_indicies_deletes(success_deletes, metadata)
+        return DeleteResult(len(success_deletes))
 
     @support_alert
     def count_documents(self, filter):
@@ -1120,25 +1117,25 @@ class Collection():
         _validate_filter(filter)
         return len(list(self.__find_ids(filter)))
 
-    # @support_alert
-    # def distinct(self, key, filter=None):
-    #     """
-    #     Given a key, return all distinct documents matching the key
+    @support_alert
+    def distinct(self, key, filter=None):
+        """
+        Given a key, return all distinct documents matching the key
 
-    #     :param key str:
-    #     :param filter dict|None:
-    #     :rtype: list[str]
-    #     """
+        :param key str:
+        :param filter dict|None:
+        :rtype: list[str]
+        """
 
-    #     if not isinstance(key, str):
-    #         raise MongitaError("The 'key' parameter must be a string")
-    #     filter = filter or {}
-    #     _validate_filter(filter)
-    #     uniq = set()
-    #     for doc in self.find(filter):
-    #         uniq.add(_get_item_from_doc(doc, key))
-    #     uniq.discard(None)
-    #     return list(uniq)
+        if not isinstance(key, str):
+            raise MongitaError("The 'key' parameter must be a string")
+        filter = filter or {}
+        _validate_filter(filter)
+        uniq = set()
+        for doc in self.find(filter):
+            uniq.add(_get_item_from_doc(doc, key))
+        uniq.discard(None)
+        return list(uniq)
 
     def __get_metadata(self):
         """
