@@ -150,10 +150,12 @@ class SqliteEngine(Engine):
         dbname, tablename = collection.split('.', 1)
         _, cur = self.cur(dbname)
         doc_id = str(doc_id)
+        print("getting", collection, doc_id)
         cur.execute(f'SELECT * FROM {tablename} WHERE _id = ?', (doc_id,))
         return loads(cur.fetchone()[1])
 
     def put_doc(self, collection, doc, no_overwrite=False):
+        print("putting", collection, doc)
         dbname, tablename = collection.split('.', 1)
         doc_id = str(doc['_id'])
         if no_overwrite and self.doc_exists(collection, doc_id):
@@ -164,8 +166,11 @@ class SqliteEngine(Engine):
             cur.execute(f'CREATE TABLE {tablename} (_id TEXT PRIMARY KEY, data BLOB)')
         # TODO json or bson?
         print("inserting", doc_id, dumps(doc))
+        # try:
         cur.execute(f'INSERT INTO {tablename} VALUES (?, ?)', (doc_id, dumps(doc)))
         con.commit()
+        # except sqlite3.IntegrityError:
+
         return True
 
         # if no_overwrite and self.doc_exists(collection, doc_id):
@@ -195,6 +200,16 @@ class SqliteEngine(Engine):
         # self._set_file_attrs(collection, doc_id, pos)
         # self._file_attrs[collection]['total_bytes'] += len(encoded_doc)
         # return True
+
+    def replace_doc(self, collection, doc):
+        dbname, tablename = collection.split('.', 1)
+        doc_id = str(doc['_id'])
+        # if not self.doc_exists(collection, doc_id):
+        #     return False
+        con, cur = self.cur(dbname)
+        cur.execute(f'UPDATE {tablename} SET data = ? WHERE _id = ?', (dumps(doc), doc_id))
+        con.commit()
+        return True
 
     def delete_doc(self, collection, doc_id):
         con, cur = self.cur(collection)
@@ -274,29 +289,10 @@ class SqliteEngine(Engine):
         #     return list(map(str, keys))
         # return list(map(str, itertools.islice(keys, limit)))
 
-    def list_ids_filter(self, collection, filter, sort=None, limit=None, skip=None):
-        dbname, tablename = collection.split('.', 1)
-        _, cur = self.cur(dbname)
-
-        print("FILTER", filter)
-        print("LIMIT", limit)
-        print("SKIP", skip)
-        print("SORT", sort)
-
-        # get columns
-        cur.execute(f'PRAGMA table_info({tablename})')
-        columns = [row[1] for row in cur.fetchall()]
-        columns = [c for c in columns if c != 'data']
-
-
+    def _get_where_from_filter(self, filter, tablename, columns):
         where = []
         params = []
-
-        k_dict = {}
-
-        if not filter:
-            where = []
-        else:
+        if filter:
             for k, query_ops in filter.items():
                 if k not in columns:
                     k = f'json_extract({tablename}.data, "$.{k}")'
@@ -334,12 +330,45 @@ class SqliteEngine(Engine):
                 else:
                     where.append(f'{k} = ?')
                     params.append(mkparam(query_ops))
+        return where, params
 
-        print("WHERE", where)
-        print("PARAMS", params)
+    def count(self, collection, filter=None):
+        dbname, tablename = collection.split('.', 1)
+        con, cur = self.cur(dbname)
+        columns = self._get_columns(tablename, cur)
+        where, params = self._get_where_from_filter(filter, tablename, columns)
+        if where:
+            where = " AND ".join(where)
+            query = f'SELECT COUNT(*) FROM {tablename} WHERE {where}'
+        else:
+            query = f'SELECT COUNT(*) FROM {tablename}'
+        cur.execute(query, params)
+        return cur.fetchone()[0]
 
-        query = f'SELECT _id FROM {tablename}'
+    def _get_columns(self, tablename, cur):
+        cur.execute(f'PRAGMA table_info({tablename})')
+        columns = [row[1] for row in cur.fetchall()]
+        return [c for c in columns if c != 'data']
 
+
+    def find(self, collection, filter, sort=None, limit=None, skip=None, get_docs=False):
+        dbname, tablename = collection.split('.', 1)
+        _, cur = self.cur(dbname)
+
+        print("FILTER", filter)
+        print("LIMIT", limit)
+        print("SKIP", skip)
+        print("SORT", sort)
+
+        # get columns
+        columns = self._get_columns(tablename, cur)
+
+        if get_docs:
+            query = f'SELECT _id, data FROM {tablename}'
+        else:
+            query = f'SELECT _id FROM {tablename}'
+
+        where, params = self._get_where_from_filter(filter, tablename, columns)
         if where:
             where = " AND ".join(where)
             query += f' WHERE {where}'
@@ -358,10 +387,14 @@ class SqliteEngine(Engine):
             query += f' OFFSET {skip}'
         print("QUERY IS", query)
 
-        cur.execute(query, params)
-        ret = [row[0] for row in cur.fetchall()]
-        print("RET", ret)
-        return ret
+        doc_gen = cur.execute(query, params)
+        if get_docs:
+            return (loads(row[1]) for row in doc_gen)
+        return (row[0] for row in doc_gen)
+
+        # ret = [row[0] for row in cur.fetchall()]
+        # print("RET", ret)
+        # return ret
 
         # keys = self._get_file_attrs(collection).keys()
         # if limit is None:

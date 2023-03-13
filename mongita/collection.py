@@ -773,39 +773,42 @@ class Collection():
             raise MongitaError("Not all documents inserted") from exception
         return InsertManyResult(success_docs)
 
-    # @support_alert
-    # def replace_one(self, filter, replacement, upsert=False):
-    #     """
-    #     Replace one document. If no document was found with the filter,
-    #     and upsert is True, insert the replacement.
+    @support_alert
+    def replace_one(self, filter, replacement, upsert=False):
+        """
+        Replace one document. If no document was found with the filter,
+        and upsert is True, insert the replacement.
 
-    #     :param filter dict:
-    #     :param replacement dict:
-    #     :param bool upsert:
-    #     :rtype: results.UpdateResult
-    #     """
-    #     filter = filter or {}
-    #     _validate_filter(filter)
-    #     _validate_doc(replacement)
-    #     self.__create()
+        :param filter dict:
+        :param replacement dict:
+        :param bool upsert:
+        :rtype: results.UpdateResult
+        """
+        filter = filter or {}
+        _validate_filter(filter)
+        _validate_doc(replacement)
+        self.__create()
 
-    #     replacement = copy.deepcopy(replacement)
+        replacement = copy.deepcopy(replacement)
 
-    #     with self._engine.lock:
-    #         doc_id = self.__find_one_id(filter, upsert=upsert)
-    #         if not doc_id:
-    #             if upsert:
-    #                 metadata = self.__get_metadata()
-    #                 replacement['_id'] = replacement.get('_id') or bson.ObjectId()
-    #                 self.__insert_one(replacement)
-    #                 self.__update_indicies([replacement], metadata)
-    #                 return UpdateResult(0, 1, replacement['_id'])
-    #             return UpdateResult(0, 0)
-    #         replacement['_id'] = doc_id
-    #         metadata = self.__get_metadata()
-    #         assert self._engine.put_doc(self.full_name, replacement)
-    #         self.__update_indicies([replacement], metadata)
-    #         return UpdateResult(1, 1)
+        # with self._engine.lock:
+        doc_id = self.__find_one_id(filter)
+        if doc_id:
+            replacement['_id'] = doc_id
+            # metadata = self.__get_metadata()
+            print("REPLACING", replacement)
+            assert self._engine.replace_doc(self.full_name, replacement)
+            # self.__update_indicies([replacement], metadata)
+            return UpdateResult(1, 1)
+        if upsert:
+            # metadata = self.__get_metadata()
+            if '_id' in replacement and '_id' in filter and replacement['_id'] != filter['_id']:
+                raise MongitaError("Replacement document _id must match filter _id in an upsert")
+            replacement['_id'] = replacement.get('_id') or filter.get('_id') or bson.ObjectId()
+            self.__insert_one(replacement)
+            # self.__update_indicies([replacement], metadata)
+            return UpdateResult(0, 1, replacement['_id'])
+        return UpdateResult(0, 0)
 
     def __find_one_id(self, filter, sort=None, skip=None, upsert=False):
         """
@@ -821,7 +824,7 @@ class Collection():
             return self._engine.find_one_id(self._base_location)
 
         if '_id' in filter:
-            if upsert or self._engine.doc_exists(self.full_name, filter['_id']):
+            if self._engine.doc_exists(self.full_name, filter['_id']):
                 return filter['_id']
             return None
 
@@ -877,27 +880,13 @@ class Collection():
             assert False
             # doc_ids = _apply_indx_ops(indx_ops)
         else:
-            doc_ids = self._engine.list_ids_filter(self._base_location, slow_filters, sort=sort, limit=limit, skip=skip)
-        if not doc_ids:
-            return
+            doc_id_gen = self._engine.find(self._base_location, slow_filters, sort=sort, limit=limit, skip=skip, get_docs=False)
+        return doc_id_gen
 
-        # if sort:
-        #     docs_to_return = []
-        #     for doc_id in doc_ids:
-        #         doc = self._engine.get_doc(self.full_name, doc_id)
-        #         # if _doc_matches_slow_filters(doc, slow_filters):
-        #         #     docs_to_return.append(doc)
-        #         docs_to_return.append(doc)
-        #     _sort_docs(docs_to_return, sort)
-
-        #     for doc in docs_to_return:
-        #         yield doc['_id']
-        #     return
-
-        for doc_id in doc_ids:
-            doc = self._engine.get_doc(self.full_name, doc_id)
-            if doc: #and _doc_matches_slow_filters(doc, slow_filters):
-                yield doc['_id']
+        # for doc_id in doc_gen:
+        #     # doc = self._engine.get_doc(self.full_name, doc_id)
+        #     # if doc: #and _doc_matches_slow_filters(doc, slow_filters):
+        #     yield doc_id[0]
 
     def __find(self, filter, sort=None, limit=None, skip=None, metadata=None, shallow=False):
         """
@@ -911,15 +900,25 @@ class Collection():
         :param metadata dict|None:
         :rtype: Generator(list[dict])
         """
-        gen = self.__find_ids(filter, sort, limit, skip, metadata=metadata)
+        filter = filter or {}
+        sort = sort or []
+        print("find", filter, sort, limit, skip, metadata)
+
+        if limit == 0:
+            return
+
+        metadata = metadata or self.__get_metadata()
+        slow_filters, indx_ops = _split_filter(filter, metadata)
+
+        doc_gen = self._engine.find(self._base_location, slow_filters, sort=sort, limit=limit, skip=skip, get_docs=True)
 
         if shallow:
-            for doc_id in gen:
-                doc = self._engine.get_doc(self.full_name, doc_id)
+            for doc in doc_gen:
+                # doc = self._engine.get_doc(self.full_name, doc_id)
                 yield doc
         else:
-            for doc_id in gen:
-                doc = self._engine.get_doc(self.full_name, doc_id)
+            for doc in doc_gen:
+                # doc = self._engine.get_doc(self.full_name, doc_id)
                 yield copy.deepcopy(doc)
 
     @support_alert
@@ -1094,7 +1093,7 @@ class Collection():
         :rtype: int
         """
         _validate_filter(filter)
-        return len(list(self.__find_ids(filter)))
+        return self._engine.count(self.full_name, filter)
 
     # @support_alert
     # def distinct(self, key, filter=None):

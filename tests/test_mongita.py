@@ -305,6 +305,7 @@ def test_find(client_class):
     assert isinstance(doc_cursor, cursor.Cursor)
     docs = list(doc_cursor)
     assert len(docs) == LEN_TEST_DOCS
+    print(docs)
     assert all(isinstance(doc, dict) for doc in docs)
     # assert all(not isinstance(doc, StorageObject) for doc in docs)
     assert all(isinstance(doc['_id'], bson.objectid.ObjectId) for doc in docs)
@@ -340,17 +341,17 @@ def test_find(client_class):
     assert len(finds) == LEN_TEST_DOCS
 
 
-# @pytest.mark.parametrize("client_class", CLIENTS)
-# def test_find_in_list(client_class):
-#     """Test for fix with find in list"""
-#     client, coll, imr = setup_many(client_class)
-#     assert coll.count_documents({'continents': 'EA'}) == 4
-#     assert coll.find_one({'continents': 'NA'})['name'] == "Human"
+# # @pytest.mark.parametrize("client_class", CLIENTS)
+# # def test_find_in_list(client_class):
+# #     """Test for fix with find in list"""
+# #     client, coll, imr = setup_many(client_class)
+# #     assert coll.count_documents({'continents': 'EA'}) == 4
+# #     assert coll.find_one({'continents': 'NA'})['name'] == "Human"
 
-#     client, coll, imr = setup_many(client_class)
-#     coll.create_index('continents')
-#     assert coll.count_documents({'continents': 'EA'}) == 4
-#     assert coll.find_one({'continents': 'NA'})['name'] == "Human"
+# #     client, coll, imr = setup_many(client_class)
+# #     coll.create_index('continents')
+# #     assert coll.count_documents({'continents': 'EA'}) == 4
+# #     assert coll.find_one({'continents': 'NA'})['name'] == "Human"
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -526,6 +527,7 @@ def test_skip(client_class):
 
 #     doc = coll.find_one({'name': TEST_DOCS[0]['name']})
 #     assert doc['name'] == TEST_DOCS[0]['name']
+#     assert coll.count_documents({'name': 'Indian grey mongoose'}) == 1
 #     assert '_id' not in TEST_DOCS[1]
 #     ur = coll.replace_one({'_id': doc['_id']}, TEST_DOCS[1])
 #     assert '_id' not in TEST_DOCS[1]
@@ -555,7 +557,9 @@ def test_skip(client_class):
 #                               upsert=True)
 
 #     # upsert a non-existent document, with a provided ID
-#     coll.replace_one({'_id': 'id_from_filter'}, {'key': 'value'}, upsert=True)
+#     ur = coll.replace_one({'_id': 'id_from_filter'}, {'key': 'value'}, upsert=True)
+#     assert ur.matched_count == 0
+#     assert ur.modified_count == 1
 #     assert coll.count_documents({'_id': 'id_from_filter'}) == 1
 
 #     # fail gracefully
@@ -571,30 +575,31 @@ def test_skip(client_class):
 #     with pytest.raises(errors.PyMongoError):
 #         coll.find({'kingdom': {'$bigger': 'bird'}})
 
+#     assert coll.count_documents({}) == LEN_TEST_DOCS
 #     assert coll.count_documents({'weight': {'$eq': 4}}) == 1
 #     assert coll.count_documents({'weight': {'$ne': 4}}) == LEN_TEST_DOCS - 1
 
-#     assert set(d['name'] for d in coll.find({'weight': {'$lt': 4}})) == \
-#            set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') < 4)
-#     assert set(d['name'] for d in coll.find({'weight': {'$lte': 4}})) == \
-#            set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') <= 4)
-#     assert set(d['name'] for d in coll.find({'weight': {'$gt': 4}})) == \
-#            set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') > 4)
-#     assert set(d['name'] for d in coll.find({'weight': {'$gte': 4}})) == \
-#            set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') >= 4)
+    # assert set(d['name'] for d in coll.find({'weight': {'$lt': 4}})) == \
+    #        set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') < 4)
+    # assert set(d['name'] for d in coll.find({'weight': {'$lte': 4}})) == \
+    #        set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') <= 4)
+    # assert set(d['name'] for d in coll.find({'weight': {'$gt': 4}})) == \
+    #        set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') > 4)
+    # assert set(d['name'] for d in coll.find({'weight': {'$gte': 4}})) == \
+    #        set(d['name'] for d in TEST_DOCS if isinstance(d.get('weight'), (int, float)) and d.get('weight') >= 4)
 
-#     assert set(d['name'] for d in coll.find({'kingdom': {'$in': ['reptile', 'bird']}})) == \
-#            set(d['name'] for d in TEST_DOCS if d.get('kingdom') in ['reptile', 'bird'])
-#     assert set(d['name'] for d in coll.find({'kingdom': {'$nin': ['reptile', 'bird']}})) == \
-#            set(d['name'] for d in TEST_DOCS if d.get('kingdom') not in ['reptile', 'bird'])
-#     with pytest.raises(errors.PyMongoError):
-#         list(coll.find({'kingdom': {'$in': 'bird'}}))
-#     with pytest.raises(errors.PyMongoError):
-#         list(coll.find({'kingdom': {'$in': 5}}))
-#     with pytest.raises(errors.PyMongoError):
-#         list(coll.find({'kingdom': {'$in': None}}))
-#     with pytest.raises(errors.PyMongoError):
-#         list(coll.find({'kingdom': {'$nin': 'bird'}}))
+    # assert set(d['name'] for d in coll.find({'kingdom': {'$in': ['reptile', 'bird']}})) == \
+    #        set(d['name'] for d in TEST_DOCS if d.get('kingdom') in ['reptile', 'bird'])
+    # assert set(d['name'] for d in coll.find({'kingdom': {'$nin': ['reptile', 'bird']}})) == \
+    #        set(d['name'] for d in TEST_DOCS if d.get('kingdom') not in ['reptile', 'bird'])
+    # with pytest.raises(errors.PyMongoError):
+    #     list(coll.find({'kingdom': {'$in': 'bird'}}))
+    # with pytest.raises(errors.PyMongoError):
+    #     list(coll.find({'kingdom': {'$in': 5}}))
+    # with pytest.raises(errors.PyMongoError):
+    #     list(coll.find({'kingdom': {'$in': None}}))
+    # with pytest.raises(errors.PyMongoError):
+    #     list(coll.find({'kingdom': {'$nin': 'bird'}}))
 
 
 # @pytest.mark.parametrize("client_class", CLIENTS)
