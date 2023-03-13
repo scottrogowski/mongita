@@ -792,13 +792,15 @@ class Collection():
         replacement = copy.deepcopy(replacement)
 
         # with self._engine.lock:
-        doc_id = self.__find_one_id(filter)
-        if doc_id:
-            replacement['_id'] = doc_id
-            # metadata = self.__get_metadata()
-            print("REPLACING", replacement)
-            assert self._engine.replace_doc(self.full_name, replacement)
-            # self.__update_indicies([replacement], metadata)
+        # doc_id = self.__find_one_id(filter)
+        # print("doc_id", doc_id, "filter", filter)
+        # if doc_id:
+        #     replacement['_id'] = doc_id
+        # metadata = self.__get_metadata()
+        print("REPLACING", replacement)
+        success = self._engine.replace_doc(self.full_name, filter, replacement)
+        # self.__update_indicies([replacement], metadata)
+        if success:
             return UpdateResult(1, 1)
         if upsert:
             # metadata = self.__get_metadata()
@@ -821,14 +823,19 @@ class Collection():
         """
 
         if not filter and not sort:
-            return self._engine.find_one_id(self._base_location)
+            print("not filter and not sort")
+            return list(self._engine.find(self._base_location, {}, skip=skip, limit=1))[0]
 
         if '_id' in filter:
-            if self._engine.doc_exists(self.full_name, filter['_id']):
-                return filter['_id']
+            print("id in filter")
+            doc = self._engine.get_doc(self.full_name, filter['_id'])
+            if doc:
+                return doc['_id']
             return None
 
+        # TODO needed?
         try:
+            print("trying to find one id")
             return next(self.__find_ids(filter, sort, skip=skip))
         except StopIteration:
             return None

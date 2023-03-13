@@ -150,9 +150,11 @@ class SqliteEngine(Engine):
         dbname, tablename = collection.split('.', 1)
         _, cur = self.cur(dbname)
         doc_id = str(doc_id)
-        print("getting", collection, doc_id)
         cur.execute(f'SELECT * FROM {tablename} WHERE _id = ?', (doc_id,))
-        return loads(cur.fetchone()[1])
+        doc = cur.fetchone()
+        if not doc:
+            return None
+        return loads(doc[1])
 
     def put_doc(self, collection, doc, no_overwrite=False):
         print("putting", collection, doc)
@@ -201,13 +203,25 @@ class SqliteEngine(Engine):
         # self._file_attrs[collection]['total_bytes'] += len(encoded_doc)
         # return True
 
-    def replace_doc(self, collection, doc):
+    def replace_doc(self, collection, filter, doc):
         dbname, tablename = collection.split('.', 1)
-        doc_id = str(doc['_id'])
+        con, cur = self.cur(dbname)
+
+        replace_ids = list(self.find(collection, filter, limit=1))
+        if not replace_ids:
+            return False
+        doc_id = replace_ids[0]
+        print("replacing", doc_id, doc)
+        doc['_id'] = doc_id
+
+        # doc_id = str(doc['_id'])
         # if not self.doc_exists(collection, doc_id):
         #     return False
-        con, cur = self.cur(dbname)
-        cur.execute(f'UPDATE {tablename} SET data = ? WHERE _id = ?', (dumps(doc), doc_id))
+        # columns = self._get_columns(tablename, cur)
+        # wheres, params = self._get_where_from_filter(filter, tablename, columns)
+        query = f'UPDATE {tablename} SET data = ? WHERE _id = ?'
+
+        cur.execute(query, (dumps(doc), str(doc_id)))
         con.commit()
         return True
 
@@ -279,10 +293,11 @@ class SqliteEngine(Engine):
         return True
 
     def list_ids(self, collection, limit=None):
-        dbname, tablename = collection.split('.', 1)
-        con, cur = self.cur(dbname)
-        cur.execute(f'SELECT _id FROM {tablename}')
-        return [row[0] for row in cur.fetchall()]
+        return []
+        # dbname, tablename = collection.split('.', 1)
+        # con, cur = self.cur(dbname)
+        # cur.execute(f'SELECT _id FROM {tablename}')
+        # return [row[0] for row in cur.fetchall()]
 
         # keys = self._get_file_attrs(collection).keys()
         # if limit is None:
@@ -363,10 +378,10 @@ class SqliteEngine(Engine):
         # get columns
         columns = self._get_columns(tablename, cur)
 
-        if get_docs:
-            query = f'SELECT _id, data FROM {tablename}'
-        else:
-            query = f'SELECT _id FROM {tablename}'
+        # if get_docs:
+        query = f'SELECT _id, data FROM {tablename}'
+        # else:
+        #     query = f'SELECT _id FROM {tablename}'
 
         where, params = self._get_where_from_filter(filter, tablename, columns)
         if where:
@@ -390,7 +405,10 @@ class SqliteEngine(Engine):
         doc_gen = cur.execute(query, params)
         if get_docs:
             return (loads(row[1]) for row in doc_gen)
-        return (row[0] for row in doc_gen)
+        return (loads(row[1])['_id'] for row in doc_gen)
+        # TODO since we can't store the bson object_id in the _id column, we have to load the whole document
+        # probably want to either set this as an index or store the object_id in a way that makes it
+        # obvious that it's the object_id
 
         # ret = [row[0] for row in cur.fetchall()]
         # print("RET", ret)
