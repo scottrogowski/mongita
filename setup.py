@@ -39,7 +39,7 @@ setuptools.setup(
     ],
     python_requires='>=3.7',
     install_requires=[
-        'pymongo>=3.0,<4.0',
+        'pymongo>=3.0,<5.0',
         'sortedcontainers>=2.3,<3.0'
     ],
 )
