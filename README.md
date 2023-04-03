@@ -1,6 +1,6 @@
 ![Mongita Logo](https://raw.githubusercontent.com/scottrogowski/mongita/master/assets/mongita.jpg)
 
-![Version 1.1.1](https://img.shields.io/badge/version-1.1.1-brightgreen) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green]) ![MacOS|Linux](https://img.shields.io/badge/platforms-macos%20%7C%20linux-brightgreen)
+![Version 1.2.0](https://img.shields.io/badge/version-1.2.0-brightgreen) ![Build passing](https://img.shields.io/badge/build-passing-brightgreen) ![Coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen) ![License BSD](https://img.shields.io/badge/license-BSD-green]) ![MacOS|Linux](https://img.shields.io/badge/platforms-macos%20%7C%20linux-brightgreen)
 
 Mongita is a lightweight embedded document database that implements a commonly-used subset of the [MongoDB/PyMongo interface](https://pymongo.readthedocs.io/en/stable/). Mongita differs from MongoDB in that instead of being a server, Mongita is a self-contained Python library.  Mongita can be configured to store its documents either on disk or in memory.
 
@@ -11,7 +11,7 @@ Please report any bugs. Mongita is free and open source. [You can contribute!]((
 ### Applications
 - **Embedded database**: Mongita is a good alternative to [SQLite](https://www.sqlite.org/index.html) for embedded applications when a document database makes more sense than a relational one.
 - **Unit testing**: Mocking PyMongo/MongoDB is a pain. Worse, mocking can hide real bugs. By monkey-patching PyMongo with Mongita, unit tests can be more faithful while remaining isolated.
- 
+
 ### Design goals
 - **MongoDB compatibility**: Mongita implements a commonly-used subset of the PyMongo API. This allows projects to be started with Mongita and later upgraded to MongoDB once they reach an appropriate scale.
 - **Embedded/self-contained**: Mongita does not require a server or start a process. It is just a Python library. To use it, just add `import mongita` to the top of your script.
@@ -23,7 +23,7 @@ Please report any bugs. Mongita is free and open source. [You can contribute!]((
 ### When NOT to use Mongita
 - **You need a traditional server/client relationship**: Mongita is an embedded database. It is not process-safe. When you have multiple clients, a traditional server/client database is the correct choice.
 - **You run a lot of uncommon commands**: Mongita implements a commonly used subset of MongoDB. While the goal is to eventually implement most of it, it will take some time to get there.
-- **You need extreme performance**: Mongita has comparable performance to MongoDB and SQLite for common operations. However, it's possible you'll find bottlenecks - especially with uncommon operations. 
+- **You need extreme performance**: Mongita has comparable performance to MongoDB and SQLite for common operations. However, it's possible you'll find bottlenecks - especially with uncommon operations.
 
 ### Installation
 

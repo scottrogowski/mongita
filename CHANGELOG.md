@@ -1,5 +1,12 @@
 # Mongita CHANGELOG
 
+## [1.2.0] - 2023-04-02
+### Added
+Bumped PyMongo version support to 4.0+
+
+### Fixed
+Use ID provided from filter in an upserted document, even if it does not yet exist (#35)
+
 ## [1.1.1] - 2021-12-16
 ### Fixed
 Mongoengine wasn't working with MongitaClientDisk and the unit tests for mongoengine were not working correctly.
