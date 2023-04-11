@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import bson
 import pymongo
 import pytest
+from bson import ObjectId
 from pymongo import IndexModel
 
 sys.path.append(os.getcwd().split('/tests')[0])
@@ -1876,6 +1877,27 @@ def test_with_options(client_class):
 
     with pytest.raises(errors.MongitaNotImplementedError):
         coll.with_options(codec_options="TEST")
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_commands(client_class):
+    client = client_class()
+    results = client.db.command("buildinfo")
+    assert isinstance(results, dict)
+    assert "version" in results
+    assert results["version"] == "4.0.0"
+    assert results["versionArray"] == [4, 0, 0, 0]
+
+    results = client.db.command({"buildinfo": 1})
+    assert isinstance(results, dict)
+    assert "version" in results
+    assert results["version"] == "4.0.0"
+    assert results["versionArray"] == [4, 0, 0, 0]
+
+    with pytest.raises(errors.MongitaNotImplementedError):
+        client.db.command("collstats", "snake_hunter")
+    with pytest.raises(errors.MongitaNotImplementedError):
+        client.db.command({"filemd5": ObjectId(), "root": "my-root"})
 
 
 def test_close_memory():
