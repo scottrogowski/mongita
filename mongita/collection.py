@@ -3,9 +3,12 @@ import copy
 import datetime
 import functools
 import re
+from typing import Sequence
 
 import bson
+import pymongo
 import sortedcontainers
+from bson import SON
 
 from .cursor import Cursor, _validate_sort
 from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
@@ -631,7 +634,7 @@ def _apply_indx_ops(indx_ops):
 
 class Collection():
     UNIMPLEMENTED = ['aggregate', 'aggregate_raw_batches', 'bulk_write', 'codec_options',
-                     'create_indexes', 'drop', 'drop_indexes', 'ensure_index',
+                     'drop', 'ensure_index',
                      'estimated_document_count', 'find_one_and_delete',
                      'find_one_and_replace', 'find_one_and_update', 'find_raw_batches',
                      'inline_map_reduce', 'list_indexes', 'map_reduce', 'next',
@@ -1177,14 +1180,14 @@ class Collection():
         return metadata
 
     @support_alert
-    def create_index(self, keys, background=False):
+    def create_index(self, keys, background=False, name=None):
         """
         Create a new index for the collection.
         Indexes can dramatically speed up queries that use its fields.
         Currently, only single key indicies are supported.
         Returns the name of the new index.
 
-        :param keys str|[(key, direction)]:
+        :param keys str|[(key, direction)]|SON:
         :param background bool:
         :rtype: str
         """
@@ -1194,22 +1197,30 @@ class Collection():
         self.__create()
 
         if isinstance(keys, str):
-            keys = [(keys, ASCENDING)]
-        if not isinstance(keys, list) or keys == []:
+            keys = SON([(keys, ASCENDING)])
+        try:
+            keys = SON(keys)
+        except (ValueError, TypeError, KeyError):
             raise MongitaError("Unsupported keys parameter format %r. "
                                "See the docs." % str(keys))
+        if len(keys) == 0:
+            raise MongitaError("Unsupported keys parameter, index definition "
+                               "must contains at least one field definition")
         if len(keys) > 1:
             raise MongitaNotImplementedError("Mongita does not support multi-key indexes yet")
-        for k, direction in keys:
+        for k, direction in keys.items():
             if not k or not isinstance(k, str):
                 raise MongitaError("Index keys must be strings %r" % str(k))
             if direction not in (ASCENDING, DESCENDING):
                 raise MongitaError("Index key direction must be either ASCENDING (1) "
                                    "or DESCENDING (-1). Not %r" % direction)
 
-        key_str, direction = keys[0]
+        key_str, direction = keys.popitem()
 
         idx_name = f'{key_str}_{direction}'
+        if name:
+            idx_name = name
+
         new_idx_doc = {
             '_id': idx_name,
             'key_str': key_str,
@@ -1244,11 +1255,6 @@ class Collection():
             index_or_name = f'{index_or_name[0][0]}_{index_or_name[0][1]}'
         if not isinstance(index_or_name, str):
             raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
-        if re.match(r'^.*?_\-?1$', index_or_name):
-            key, direction = index_or_name.rsplit('_', 1)
-            direction = int(direction)
-        else:
-            index_or_name = index_or_name + '_1'
 
         with self._engine.lock:
             metadata = self.__get_metadata()
@@ -1270,3 +1276,23 @@ class Collection():
         for idx in metadata.get('indexes', {}).values():
             ret.append({idx['_id']: {'key': [(idx['key_str'], idx['direction'])]}})
         return ret
+
+    @support_alert
+    def create_indexes(self, indexes: Sequence[pymongo.operations.IndexModel]):
+        ret = []
+        for index in indexes:
+            ret.append(self.create_index(
+                keys=index.document.get("key"),
+                name=index.document.get("name"),
+                background=index.document.get("background", False)
+            ))
+
+        return ret
+
+    @support_alert
+    def drop_indexes(self):
+        metadata = self.__get_metadata()
+
+        for idx in [idx["_id"] for idx in metadata.get('indexes', {}).values()]:
+            self.drop_index(idx)
+

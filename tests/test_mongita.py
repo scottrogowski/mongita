@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import bson
 import pymongo
 import pytest
+from pymongo import IndexModel
 
 sys.path.append(os.getcwd().split('/tests')[0])
 
@@ -1321,13 +1322,16 @@ def test_indicies_basic(client_class):
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index([])
     with pytest.raises(mongita.errors.PyMongoError):
-        coll.create_index({'key': 1})
-    with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index([('key', 2)])
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index('kingdom', background=True)
+
+    # New safely supported format through bson.SON
+    idx_name = coll.create_index({'kingdom': 1})
+    assert idx_name == 'kingdom_1'
+    coll.drop_index(idx_name)
 
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
@@ -1360,6 +1364,10 @@ def test_indicies_basic(client_class):
     idx_name = coll.create_index('kingdom')
     coll.drop_index('kingdom_1')
 
+    idx_name = coll.create_index('kingdom', name="alt_kingdom")
+    assert idx_name == "alt_kingdom"
+    coll.drop_index('alt_kingdom')
+
     idx_name = coll.create_index('kingdom')
     coll.drop_index([('kingdom', 1)])
 
@@ -1372,6 +1380,25 @@ def test_indicies_basic(client_class):
         coll.drop_index('kingdom__1')
     with pytest.raises(mongita.errors.PyMongoError):
         coll.drop_index('kingdom_a')
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_indicies_multiple(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    indices = coll.create_indexes([
+        IndexModel(name="kingdom_foo", keys=[("kingdom", 1)]),
+        IndexModel(keys=[("weight", -1)]),
+    ])
+
+    assert "kingdom_foo" in indices
+    assert "weight_-1" in indices
+    assert len(indices) == 2
+    assert len(coll.index_information()) == 3
+
+    coll.drop_indexes()
+
+    assert len(coll.index_information()) == 1
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
