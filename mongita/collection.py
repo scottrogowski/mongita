@@ -634,7 +634,7 @@ def _apply_indx_ops(indx_ops):
 
 class Collection():
     UNIMPLEMENTED = ['aggregate', 'aggregate_raw_batches', 'bulk_write', 'codec_options',
-                     'drop', 'ensure_index',
+                     'ensure_index',
                      'estimated_document_count', 'find_one_and_delete',
                      'find_one_and_replace', 'find_one_and_update', 'find_raw_batches',
                      'inline_map_reduce', 'list_indexes', 'map_reduce', 'next',
@@ -1296,3 +1296,6 @@ class Collection():
         for idx in [idx["_id"] for idx in metadata.get('indexes', {}).values()]:
             self.drop_index(idx)
 
+    @support_alert
+    def drop(self):
+        self.database.drop_collection(self.name)

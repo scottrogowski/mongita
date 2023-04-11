@@ -1223,6 +1223,11 @@ def test_drop_and_add(client_class):
     assert coll.count_documents({}) == 0
     client.db.snake_hunter.insert_one({'hello': 'world'})
     assert coll.count_documents({}) == 1
+    coll.drop()
+    assert coll.count_documents({}) == 0
+    client.db.snake_hunter.insert_one({'hello': 'world'})
+    assert coll.count_documents({}) == 1
+
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
