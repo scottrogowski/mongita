@@ -1,4 +1,5 @@
 import copy
+import uuid
 from datetime import datetime, date
 import functools
 from numbers import Number
@@ -2022,6 +2023,66 @@ def test_two_connections_disk():
     assert client2.db.snake_hunter.count_documents({}) == 1
 
 
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_non_uuid_binary(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    with pytest.raises(errors.MongitaError):
+        coll.insert_one({'_id': bson.Binary(b"not a bson subtype"), 'key': 'value1'})
+
+    with pytest.raises(errors.MongitaError):
+        coll.insert_one({'_id': bson.Binary(b"not a bson subtype", 1), 'key': 'value1'})
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_uuid(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    uuid1 = bson.Binary.from_uuid(uuid.uuid4())
+    uuid2 = uuid.uuid4()
+    uuid3 = bson.Binary.from_uuid(uuid.uuid4())
+    uuid4 = uuid.uuid4()
+
+    coll.insert_one({'_id': uuid1, 'key': 'value1'})
+    assert coll.count_documents({'_id': uuid1}) == 1
+    assert coll.count_documents({}) == 9
+
+    imr = coll.insert_many([
+        {'_id': uuid2, 'key': 'value2'},
+        {'_id': uuid3, 'key': 'value3'}
+    ])
+    assert imr.inserted_ids[0] == uuid2
+    assert imr.inserted_ids[1] == uuid3
+
+    assert coll.count_documents({'_id': uuid1}) == 1
+
+    dmr = coll.delete_many({"_id": {"$in": [uuid1, uuid2]}})
+    assert dmr.deleted_count == 2
+
+    ur = coll.update_one({'_id': uuid3}, {'$set': {'foo': 'bar'}})
+    assert ur.matched_count == 1
+    assert ur.modified_count == 1
+
+    binary_three = coll.find_one({'_id': uuid3})
+    assert binary_three['foo'] == 'bar'
+
+    assert coll.count_documents({'_id': uuid4}) == 0
+    coll.replace_one({'_id': uuid4}, {'key': 'value4'}, upsert=True)
+    assert coll.count_documents({'_id': uuid3}) == 1
+    assert coll.count_documents({'_id': uuid4}) == 1
+    assert coll.count_documents({}) == 10
+
+    if not isinstance(client, MongitaClientMemory):
+        client.close()
+
+        client2 = client_class()
+        coll2 = client2.db.snake_hunter
+
+        assert coll2.count_documents({}) == 10
+        assert coll2.count_documents({'_id': uuid3}) == 1
+        assert coll2.count_documents({'_id': uuid4}) == 1
+
+
 def test_sync_basic(monkeypatch):
     clear_pymongo()
     with pytest.raises(AssertionError):
@@ -2073,3 +2134,4 @@ def test_sync_basic(monkeypatch):
                 source_uri='mongodb://localhost:27017', destination_uri=TEST_DIR)
     assert mongita_client.mongita_test.snake_hunter_2.count_documents({}) == LEN_TEST_DOCS
     assert mongita_client.mongita_test.snake_hunter_3.count_documents({}) == LEN_TEST_DOCS * 150
+

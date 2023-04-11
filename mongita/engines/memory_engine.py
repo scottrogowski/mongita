@@ -21,7 +21,7 @@ class MemoryEngine(Engine):
         return MemoryEngine(strict)
 
     def put_doc(self, collection, doc, no_overwrite=False):
-        doc_id = str(doc['_id'])
+        doc_id = self.hash_id(doc['_id'])
         if no_overwrite and doc_id in self._cache[collection]:
             return False
         if self._strict:
@@ -31,13 +31,13 @@ class MemoryEngine(Engine):
         return True
 
     def get_doc(self, collection, doc_id):
-        obj = self._cache[collection].get(str(doc_id))
+        obj = self._cache[collection].get(self.hash_id(doc_id))
         if self._strict and obj:
             return bson.decode(obj)
         return obj
 
     def doc_exists(self, collection, doc_id):
-        return str(doc_id) in self._cache[collection]
+        return self.hash_id(doc_id) in self._cache[collection]
 
     def list_ids(self, collection, limit=None):
         keys = self._cache.get(collection, {}).keys()
@@ -46,7 +46,7 @@ class MemoryEngine(Engine):
         return list(itertools.islice(keys, limit))
 
     def delete_doc(self, collection, doc_id):
-        self._cache[collection].pop(str(doc_id), None)
+        self._cache[collection].pop(self.hash_id(doc_id), None)
         return True
 
     def delete_dir(self, collection):

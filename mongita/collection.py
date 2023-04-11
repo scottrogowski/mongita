@@ -3,9 +3,11 @@ import copy
 import datetime
 import functools
 import re
+from uuid import UUID
 
 import bson
 import sortedcontainers
+from bson import UuidRepresentation
 
 from .cursor import Cursor, _validate_sort
 from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
@@ -55,8 +57,10 @@ def _validate_filter(filter):
             raise MongitaError("Filter keys must be strings, not %r" % type(filter))
     _id = filter.get('_id')
     if _id:
-        if not isinstance(_id, (bson.ObjectId, str, dict)):
-            raise MongitaError("If present, the '_id' filter must be a bson ObjectId, string, or a dict")
+        if not isinstance(_id, (bson.ObjectId, bson.Binary, UUID, str, dict)):
+            raise MongitaError("If present, the '_id' filter must be a bson ObjectId, a bson UUID, UUID, string, or a dict")
+        if isinstance(_id, bson.Binary) and _id.subtype not in [UuidRepresentation.JAVA_LEGACY, UuidRepresentation.CSHARP_LEGACY, UuidRepresentation.PYTHON_LEGACY, UuidRepresentation.STANDARD]:
+            raise MongitaError("A bson binary _id must be of UUID subtype")
     for query_ops in filter.values():
         if isinstance(query_ops, dict):
             for op in query_ops.keys():
@@ -92,8 +96,13 @@ def _validate_update(update):
                                "not %r" % type(update_dict))
         _id = update_dict.get('_id')
         if _id:
-            if not isinstance(_id, (str, bson.ObjectId)):
-                raise MongitaError("The update _id must be a bson ObjectId or a string")
+            if not isinstance(_id, (str, UUID, bson.ObjectId, bson.Binary)):
+                raise MongitaError("The update _id must be a bson ObjectId, bson UUID, UUID or a string")
+            if isinstance(_id, bson.Binary) and _id.subtype not in [UuidRepresentation.JAVA_LEGACY,
+                                                                    UuidRepresentation.CSHARP_LEGACY,
+                                                                    UuidRepresentation.PYTHON_LEGACY,
+                                                                    UuidRepresentation.STANDARD]:
+                raise MongitaError("The update _id of type bson binary must be of UUID subtype")
 
 
 def _validate_doc(doc):
@@ -109,8 +118,10 @@ def _validate_doc(doc):
         raise MongitaError("The document must be a dict, not %r" % type(doc))
     _id = doc.get('_id')
     if _id:
-        if not isinstance(_id, (bson.ObjectId, str)):
-            raise MongitaError("The document _id must be a bson ObjectId, a string, or not present")
+        if not isinstance(_id, (bson.ObjectId, bson.Binary, UUID, str)):
+            raise MongitaError("The document _id must be a bson ObjectId, a bson UUID, a UUID, a string, or not present")
+        if isinstance(_id, bson.Binary) and _id.subtype not in [UuidRepresentation.JAVA_LEGACY, UuidRepresentation.CSHARP_LEGACY, UuidRepresentation.PYTHON_LEGACY, UuidRepresentation.STANDARD]:
+            raise MongitaError("The document _id of type bson Binary must be of UUID subtype")
     for k in doc.keys():
         if not k or k.startswith('$'):
             raise InvalidName("All document keys must be truthy and cannot start with '$'.")
@@ -213,6 +224,11 @@ def _doc_matches_slow_filters(doc, slow_filters):
 
         item_from_doc = _get_item_from_doc(doc, doc_key)
         if isinstance(item_from_doc, list) and query_ops in item_from_doc:
+            continue
+        if isinstance(item_from_doc, UUID) and isinstance(query_ops, bson.Binary):
+            # bson.decode may implicitly create UUID instance from a bson.Binary
+            if query_ops.as_uuid() != item_from_doc:
+                return False
             continue
         if item_from_doc == query_ops:
             continue

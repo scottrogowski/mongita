@@ -1,5 +1,7 @@
 import abc
 
+import bson
+
 
 class Engine(abc.ABC):
     @abc.abstractmethod
@@ -112,3 +114,8 @@ class Engine(abc.ABC):
         objs = self.list_ids(prefix, 1)
         if objs:
             return objs[0]
+
+    def hash_id(self, id) -> str:
+        if isinstance(id, bson.Binary):
+            return str(id.as_uuid())
+        return str(id)
