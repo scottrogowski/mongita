@@ -1265,8 +1265,8 @@ class Collection():
         :rtype: {idx_id: {'key': [(key_str, direction_int)]}}
         """
 
-        ret = [{'_id_': {'key': [('_id', 1)]}}]
-        metadata = self.__get_metadata()
+        ret = {'_id_': {'key': [('_id', 1)]}}
+        metadata = self._Collection__get_metadata()
         for idx in metadata.get('indexes', {}).values():
-            ret.append({idx['_id']: {'key': [(idx['key_str'], idx['direction'])]}})
+            ret[idx['_id']] = {'key': [(idx['key_str'], idx['direction'])]}
         return ret
