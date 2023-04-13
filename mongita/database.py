@@ -1,4 +1,7 @@
+from typing import Union, MutableMapping, Any
+
 import bson
+from bson import SON
 
 from .collection import Collection
 from .command_cursor import CommandCursor
@@ -108,3 +111,23 @@ class Database():
             del self._cache[collection]
         except KeyError:
             pass
+
+    @support_alert
+    def command(self, command: Union[str, MutableMapping[str, Any]], value: Any = 1):
+        if isinstance(command, str):
+            command = SON({command: value})
+        else:
+            command = SON(command)
+
+        command, value = command.popitem()
+
+        if command == "buildinfo":
+            return {
+                'version': "4.0.0",
+                'versionArray': [4, 0, 0, 0],
+                'debug': False,
+                'modules': [],
+            }
+
+        raise MongitaNotImplementedError("Mongita does not support %s command yet", command)
+

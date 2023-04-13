@@ -12,6 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 import bson
 import pymongo
 import pytest
+from bson import ObjectId
+from pymongo import IndexModel, ReturnDocument
+
+from mongita.collection import _validate_update
 
 sys.path.append(os.getcwd().split('/tests')[0])
 
@@ -540,6 +544,7 @@ def test_replace_one(client_class):
     assert ur.matched_count == 0
     assert ur.modified_count == 1
     assert ur.upserted_id and isinstance(ur.upserted_id, bson.ObjectId)
+    assert ur.raw_result.get("updatedExisting") == False
     assert coll.count_documents({'name': 'Fake Mongoose'}) == 1
 
     # upsert an existing document
@@ -559,6 +564,52 @@ def test_replace_one(client_class):
     ur = coll.replace_one({'name': 'not exists'}, {'kingdom': 'fake kingdom'})
     assert ur.matched_count == 0
     assert ur.modified_count == 0
+    assert ur.raw_result.get("updatedExisting") == False
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_find_one_and_replace(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(TypeError):
+        coll.find_one_and_replace()
+    with pytest.raises(TypeError):
+        coll.find_one_and_replace({'_id': 'a'})
+
+    doc = coll.find_one({'name': TEST_DOCS[0]['name']})
+    assert doc['name'] == TEST_DOCS[0]['name']
+    assert '_id' not in TEST_DOCS[1]
+
+    doc = coll.find_one_and_replace({'_id': doc['_id']}, TEST_DOCS[1], )
+    assert '_id' not in TEST_DOCS[1]
+    assert isinstance(doc, dict)
+    assert doc["name"] == TEST_DOCS[0]["name"]
+    assert coll.count_documents({'name': 'Indian grey mongoose'}) == 2
+
+    doc = coll.find_one_and_replace({'name': 'Indian grey mongoose'}, TEST_DOCS[2], return_document=ReturnDocument.AFTER)
+    assert doc['name'] == TEST_DOCS[2]["name"]
+    assert coll.count_documents({'name': 'Indian grey mongoose'}) == 1
+    assert coll.count_documents({'name': 'Honey Badger'}) == 2
+
+    assert set(imr.inserted_ids) == set([d['_id'] for d in coll.find()])
+
+    doc = coll.find_one_and_replace({'name': 'Fake Mongoose'},
+                          {'name': 'Fake Mongoose', 'weight': 5},
+                          upsert=True)
+    assert doc["_id"] and isinstance(doc["_id"], bson.ObjectId)
+    assert coll.count_documents({'name': 'Fake Mongoose'}) == 1
+
+    # upsert an existing document
+    expected_doc_id = doc["_id"]
+    doc = coll.find_one_and_replace({'name': 'Fake Mongoose'}, {'name': 'Other mongoose'}, upsert=True, return_document=ReturnDocument.AFTER)
+    assert doc["name"] == "Other mongoose"
+    assert doc["_id"] == expected_doc_id
+
+    # upsert a non-existent document, with a provided ID
+    coll.find_one_and_replace({'_id': 'id_from_filter'}, {'key': 'value'}, upsert=True)
+    assert coll.count_documents({'_id': 'id_from_filter'}) == 1
+
+    # fail gracefully
+    assert not coll.find_one_and_replace({'name': 'not exists'}, {'kingdom': 'fake kingdom'})
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -666,6 +717,15 @@ def test_filter_combos(client_class):
                                                 '$ne': .75}}) == 0
 
 
+def test_validate_update():
+    with pytest.raises(errors.MongitaNotImplementedError):
+        _validate_update({"$unset": {"foo": ""}})
+    with pytest.raises(errors.MongitaError, match=r"Performing an update on the path '_id' would modify the "
+                                                  r"immutable field '_id'"):
+        _validate_update({"$set": {"_id": "should_not_replace_immutable_id"}})
+    _validate_update({"$set": {"someone": "something"}})
+
+
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_update_one(client_class):
     client, coll, imr = setup_many(client_class)
@@ -686,18 +746,22 @@ def test_update_one(client_class):
     assert ur.matched_count == 1
     assert ur.modified_count == 1
     assert ur.upserted_id is None
+    assert ur.raw_result.get("updatedExisting") == True
     assert coll.find_one({'name': 'Mongooose'})
     assert isinstance(imr.inserted_ids[0], bson.ObjectId)
 
     ur = coll.update_one({'kingdom': 'bird'}, {'$set': {'name': 'Pidgeotto'}})
     assert ur.matched_count == 1
     assert ur.modified_count == 1
+    assert ur.raw_result.get("updatedExisting") == True
+
     pidgeotto = coll.find_one({'kingdom': 'bird'})
     assert pidgeotto['name'] == 'Pidgeotto'
 
     ur = coll.update_one({'kingdom': 'bird'}, {'$set': {'kingdom': 'reptile'}})
     assert ur.matched_count == 1
     assert ur.modified_count == 1
+    assert ur.raw_result.get("updatedExisting") == True
     assert coll.find_one({'kingdom': 'bird'}) is None
     assert coll.count_documents({'kingdom': 'reptile'}) == 2
     pidgeotto2 = coll.find_one({'name': 'Pidgeotto'})
@@ -708,6 +772,7 @@ def test_update_one(client_class):
     ur = coll.update_one({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}}, {'$set': {'kingdom': 'reptile'}})
     assert ur.matched_count == tmp_doc_cnt
     assert ur.modified_count == 1
+    assert ur.raw_result.get("updatedExisting") == True
     assert coll.count_documents({'kingdom': 'reptile'}) == 3
 
     mongoose = coll.find_one({'name': 'Mongooose'})
@@ -715,21 +780,66 @@ def test_update_one(client_class):
     ur = coll.update_one({'name': 'Mongooose'}, {'$inc': {'weight': -1}})
     assert ur.matched_count == 1
     assert ur.modified_count == 1
+    assert ur.raw_result.get("updatedExisting") == True
     mongoose = coll.find_one({'name': 'Mongooose'})
     assert mongoose.get('weight') == mongoose_before_weight - 1
 
     ur = coll.update_one({'name': 'fake'}, {'$set': {'name': 'Mngse'}})
     assert ur.matched_count == 0
     assert ur.modified_count == 0
+    assert ur.raw_result.get("updatedExisting") == False
     assert not coll.count_documents({'name': 'Mngse'})
 
-    # corner case updating ids must be strings
-    coll.update_one({'name': 'fake'}, {'$set': {'_id': 'uniqlo'}})
-    coll.update_one({'name': 'fake'}, {'$set': {'_id': bson.ObjectId()}})
+    # Prevent _id to be updated
     with pytest.raises(errors.PyMongoError):
-        coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
+        coll.update_one({'name': 'fake'}, {'$set': {'_id': 'uniqlo'}})
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_find_one_and_update(client_class):
+    client, coll, imr = setup_many(client_class)
     with pytest.raises(errors.PyMongoError):
-        coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
+        coll.find_one_and_update({}, {}, upsert=True)
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({}, {'name': 'Mongooose'})
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({}, ['name', 'Mongooose'])
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({}, {'$set': ['name', 'Mongooose']})
+    with pytest.raises(errors.MongitaNotImplementedError):
+        coll.find_one_and_update({}, {'$unset': ['name', '']})
+
+    assert coll.find_one_and_update({'name': 'Meercat'}, {'$set': {'name': 'Mongooose'}})
+    assert isinstance(imr.inserted_ids[0], bson.ObjectId)
+
+    pidgeotto = coll.find_one_and_update({'kingdom': 'bird'}, {'$set': {'name': 'Pidgeotto'}}, return_document=ReturnDocument.AFTER)
+    assert pidgeotto['name'] == 'Pidgeotto'
+
+    before = coll.find_one_and_update({'kingdom': 'bird'}, {'$set': {'kingdom': 'reptile'}})
+    assert before['kingdom'] == 'bird'
+
+    assert coll.find_one({'kingdom': 'bird'}) is None
+    assert coll.count_documents({'kingdom': 'reptile'}) == 2
+
+    pidgeotto2 = coll.find_one({'name': 'Pidgeotto'})
+    assert pidgeotto2.get('kingdom') == 'reptile'
+    assert pidgeotto2['_id'] == pidgeotto['_id']
+
+    tmp_doc_cnt = coll.count_documents({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}})
+    doc = coll.find_one_and_update({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}}, {'$set': {'kingdom': 'reptile'}})
+    assert doc["kingdom"] == "mammal"
+    assert coll.count_documents({'kingdom': 'reptile'}) == 3
+
+    mongoose_before_weight = coll.find_one_and_update({'name': 'Mongooose'}, {'$inc': {'weight': -1}})
+    mongoose = coll.find_one({'name': 'Mongooose'})
+    assert mongoose.get('weight') == mongoose_before_weight.get("weight") - 1
+
+    assert not coll.find_one_and_update({'name': 'fake'}, {'$set': {'name': 'Mngse'}})
+    assert not coll.count_documents({'name': 'Mngse'})
+
+    # prevent _id to be updated
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': 'uniqlo'}})
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -744,6 +854,7 @@ def test_update_many(client_class):
     assert ur.matched_count == LEN_TEST_DOCS
     assert ur.modified_count == LEN_TEST_DOCS
     assert ur.upserted_id is None
+    assert ur.raw_result.get("updatedExisting") == True
 
     assert coll.distinct('name') == ['Mongooose']
     assert set(d['name'] for d in coll.find({})) == {'Mongooose'}
@@ -753,6 +864,7 @@ def test_update_many(client_class):
                           {'$set': {'kingdom': 'mammal'}})
     assert ur.matched_count == 3
     assert ur.modified_count == 3
+    assert ur.raw_result.get("updatedExisting") == True
     assert coll.distinct('kingdom') == ['mammal']
 
     ur = coll.update_many({'weight': {'$lt': 4}},
@@ -932,12 +1044,34 @@ def test_delete_one(client_class):
     assert isinstance(dor, results.DeleteResult)
     assert isinstance(repr(dor), str)
     assert dor.deleted_count == 1
+    assert dor.raw_result.get("n") == 1
+
     remaining_ids = [d['_id'] for d in coll.find({})]
     assert len(remaining_ids) == len(TEST_DOCS) - 1
     dor = coll.delete_one({'_id': remaining_ids[-1]})
     assert dor.deleted_count == 1
     dor = coll.delete_one({'_id': remaining_ids[-1]})
     assert dor.deleted_count == 0
+    assert coll.count_documents({}) == LEN_TEST_DOCS - 2
+
+    dor = coll.delete_one({'_id': 'never_existed'})
+    assert dor.deleted_count == 0
+    assert dor.raw_result.get("n") == 0
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_find_one_and_delete(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(TypeError):
+        coll.find_one_and_delete()
+    doc = coll.find_one_and_delete({})
+    assert isinstance(doc, dict)
+
+    remaining_ids = [d['_id'] for d in coll.find({})]
+    assert len(remaining_ids) == len(TEST_DOCS) - 1
+    doc = coll.find_one_and_delete({'_id': remaining_ids[-1]})
+    assert doc["_id"] == remaining_ids[-1]
+    assert not coll.find_one_and_delete({'_id': remaining_ids[-1]})
     assert coll.count_documents({}) == LEN_TEST_DOCS - 2
 
     dor = coll.delete_one({'_id': 'never_existed'})
@@ -952,6 +1086,7 @@ def test_delete_many(client_class):
     dor = coll.delete_many({})
     assert isinstance(dor, results.DeleteResult)
     assert dor.deleted_count == LEN_TEST_DOCS
+    assert dor.raw_result.get("n") == LEN_TEST_DOCS
     assert coll.find_one({'_id': imr.inserted_ids[0]}) is None
     assert coll.find_one() is None
     assert coll.count_documents({}) == 0
@@ -1222,6 +1357,11 @@ def test_drop_and_add(client_class):
     assert coll.count_documents({}) == 0
     client.db.snake_hunter.insert_one({'hello': 'world'})
     assert coll.count_documents({}) == 1
+    coll.drop()
+    assert coll.count_documents({}) == 0
+    client.db.snake_hunter.insert_one({'hello': 'world'})
+    assert coll.count_documents({}) == 1
+
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1321,13 +1461,16 @@ def test_indicies_basic(client_class):
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index([])
     with pytest.raises(mongita.errors.PyMongoError):
-        coll.create_index({'key': 1})
-    with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index([('key', ASCENDING), ('key2', ASCENDING)])
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index([('key', 2)])
     with pytest.raises(mongita.errors.PyMongoError):
         coll.create_index('kingdom', background=True)
+
+    # New safely supported format through bson.SON
+    idx_name = coll.create_index({'kingdom': 1})
+    assert idx_name == 'kingdom_1'
+    coll.drop_index(idx_name)
 
     idx_name = coll.create_index('kingdom')
     assert idx_name == 'kingdom_1'
@@ -1360,6 +1503,10 @@ def test_indicies_basic(client_class):
     idx_name = coll.create_index('kingdom')
     coll.drop_index('kingdom_1')
 
+    idx_name = coll.create_index('kingdom', name="alt_kingdom")
+    assert idx_name == "alt_kingdom"
+    coll.drop_index('alt_kingdom')
+
     idx_name = coll.create_index('kingdom')
     coll.drop_index([('kingdom', 1)])
 
@@ -1372,6 +1519,25 @@ def test_indicies_basic(client_class):
         coll.drop_index('kingdom__1')
     with pytest.raises(mongita.errors.PyMongoError):
         coll.drop_index('kingdom_a')
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_indicies_multiple(client_class):
+    client, coll, imr = setup_many(client_class)
+
+    indices = coll.create_indexes([
+        IndexModel(name="kingdom_foo", keys=[("kingdom", 1)]),
+        IndexModel(keys=[("weight", -1)]),
+    ])
+
+    assert "kingdom_foo" in indices
+    assert "weight_-1" in indices
+    assert len(indices) == 2
+    assert len(coll.index_information()) == 3
+
+    coll.drop_indexes()
+
+    assert len(coll.index_information()) == 1
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1433,6 +1599,7 @@ def test_indicies_flow(client_class):
     ur = coll.update_many({'weight': {'$lt': 3}}, {'$set': {'weight': 5}})
     assert ur.matched_count == weight_lt_3
     assert ur.modified_count == weight_lt_3
+    assert ur.raw_result.get("updatedExisting") == True
 
     assert coll.count_documents({'weight': {'$lt': 3}}) == 0
     assert coll.count_documents({'weight': {'$gte': 3}}) == LEN_TEST_DOCS - 2
@@ -1846,6 +2013,27 @@ def test_with_options(client_class):
         coll.with_options(codec_options="TEST")
 
 
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_commands(client_class):
+    client = client_class()
+    results = client.db.command("buildinfo")
+    assert isinstance(results, dict)
+    assert "version" in results
+    assert results["version"] == "4.0.0"
+    assert results["versionArray"] == [4, 0, 0, 0]
+
+    results = client.db.command({"buildinfo": 1})
+    assert isinstance(results, dict)
+    assert "version" in results
+    assert results["version"] == "4.0.0"
+    assert results["versionArray"] == [4, 0, 0, 0]
+
+    with pytest.raises(errors.MongitaNotImplementedError):
+        client.db.command("collstats", "snake_hunter")
+    with pytest.raises(errors.MongitaNotImplementedError):
+        client.db.command({"filemd5": ObjectId(), "root": "my-root"})
+
+
 def test_close_memory():
     """ Close on memory should delete everything """
     client, coll, imr = setup_many(MongitaClientMemory)
@@ -2000,6 +2188,7 @@ def test_defrag():
     client = _MongitaClientDisk()
     ur = client.db.coll.update_many({'val': {'$gt': .5}}, {'$set': {'attrs': {}, 'spotted': None}})
     assert ur.modified_count == len([d for d in TEST_DOCS if d.get('val') and d['val'] > .5]) * 100
+    assert ur.raw_result.get("updatedExisting") == True
     fh = client.engine._get_coll_fh('db.coll')
     fh.seek(0, 2)
     assert fh.tell() < pos

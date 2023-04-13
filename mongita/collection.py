@@ -3,9 +3,13 @@ import copy
 import datetime
 import functools
 import re
+from typing import Sequence
 
 import bson
+import pymongo
 import sortedcontainers
+from bson import SON
+from pymongo import ReturnDocument
 
 from .cursor import Cursor, _validate_sort
 from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
@@ -14,7 +18,6 @@ from .errors import (MongitaError, MongitaNotImplementedError, DuplicateKeyError
 from .read_concern import ReadConcern
 from .results import InsertOneResult, InsertManyResult, DeleteResult, UpdateResult
 from .write_concern import WriteConcern
-
 
 _SUPPORTED_FILTER_OPERATORS = ('$in', '$eq', '$gt', '$gte', '$lt', '$lte', '$ne', '$nin')
 _SUPPORTED_UPDATE_OPERATORS = ('$set', '$inc', '$push')
@@ -74,6 +77,7 @@ def _validate_update(update):
     :param update dict:
     :rtype: None
     """
+
     if not isinstance(update, dict):
         raise MongitaError("The update parameter must be a dict, not %r" % type(update))
     for k in update.keys():
@@ -90,10 +94,8 @@ def _validate_update(update):
         if not isinstance(update_dict, dict):
             raise MongitaError("If present, the update operator must be a dict, "
                                "not %r" % type(update_dict))
-        _id = update_dict.get('_id')
-        if _id:
-            if not isinstance(_id, (str, bson.ObjectId)):
-                raise MongitaError("The update _id must be a bson ObjectId or a string")
+        if update_dict.get('_id'):
+            raise MongitaError("Performing an update on the path '_id' would modify the immutable field '_id'")
 
 
 def _validate_doc(doc):
@@ -631,7 +633,7 @@ def _apply_indx_ops(indx_ops):
 
 class Collection():
     UNIMPLEMENTED = ['aggregate', 'aggregate_raw_batches', 'bulk_write', 'codec_options',
-                     'create_indexes', 'drop', 'drop_indexes', 'ensure_index',
+                     'ensure_index',
                      'estimated_document_count', 'find_one_and_delete',
                      'find_one_and_replace', 'find_one_and_update', 'find_raw_batches',
                      'inline_map_reduce', 'list_indexes', 'map_reduce', 'next',
@@ -733,7 +735,7 @@ class Collection():
             metadata = self.__get_metadata()
             self.__insert_one(document)
             self.__update_indicies([document], metadata)
-        return InsertOneResult(document['_id'])
+        return InsertOneResult(document['_id'], acknowledged=True)
 
     @support_alert
     def insert_many(self, documents, ordered=True):
@@ -771,7 +773,7 @@ class Collection():
             self.__update_indicies(success_docs, metadata)
         if exception:
             raise MongitaError("Not all documents inserted") from exception
-        return InsertManyResult(success_docs)
+        return InsertManyResult([doc["_id"] for doc in success_docs], acknowledged=True)
 
     @support_alert
     def replace_one(self, filter, replacement, upsert=False):
@@ -799,13 +801,16 @@ class Collection():
                     replacement['_id'] = replacement.get('_id') or bson.ObjectId()
                     self.__insert_one(replacement)
                     self.__update_indicies([replacement], metadata)
-                    return UpdateResult(0, 1, replacement['_id'])
-                return UpdateResult(0, 0)
+                    return UpdateResult({
+                        "n": 0, "nModified": 1, "ok": 1.0,
+                        "upserted": replacement['_id'], "updatedExisting": False
+                    }, acknowledged=True)
+                return UpdateResult({"n": 0, "nModified": 0, "updatedExisting": False, "ok": 1.0}, acknowledged=True)
             replacement['_id'] = doc_id
             metadata = self.__get_metadata()
             assert self._engine.put_doc(self.full_name, replacement)
             self.__update_indicies([replacement], metadata)
-            return UpdateResult(1, 1)
+            return UpdateResult({"n": 1, "nModified": 1, "updatedExisting": True, "ok": 1.0}, acknowledged=True)
 
     def __find_one_id(self, filter, sort=None, skip=None, upsert=False):
         """
@@ -1028,11 +1033,11 @@ class Collection():
             doc_ids = list(self.__find_ids(filter))
             matched_count = len(doc_ids)
             if not matched_count:
-                return UpdateResult(matched_count, 0)
+                return UpdateResult({"n": matched_count, "nModified": 0, "updatedExisting": False, "ok": 1.0}, acknowledged=True)
             metadata = self.__get_metadata()
             doc = self.__update_doc(doc_ids[0], update)
             self.__update_indicies([doc], metadata)
-        return UpdateResult(matched_count, 1)
+        return UpdateResult({"n": matched_count, "nModified": 1, "updatedExisting": True, "ok": 1.0}, acknowledged=True)
 
     @support_alert
     def update_many(self, filter, update, upsert=False):
@@ -1062,7 +1067,7 @@ class Collection():
                 success_docs.append(doc)
                 matched_cnt += 1
             self.__update_indicies(success_docs, metadata)
-        return UpdateResult(matched_cnt, len(success_docs))
+        return UpdateResult({"n": matched_cnt, "nModified": len(success_docs), "updatedExisting": matched_cnt > 0, "ok": 1.0}, acknowledged=True)
 
     @support_alert
     def delete_one(self, filter):
@@ -1078,11 +1083,11 @@ class Collection():
         with self._engine.lock:
             doc_id = self.__find_one_id(filter)
             if not doc_id:
-                return DeleteResult(0)
+                return DeleteResult({"n": 0}, acknowledged=True)
             metadata = self.__get_metadata()
             self._engine.delete_doc(self.full_name, doc_id)
             self.__update_indicies_deletes({doc_id}, metadata)
-        return DeleteResult(1)
+        return DeleteResult({"n": 1}, acknowledged=True)
 
     @support_alert
     def delete_many(self, filter):
@@ -1103,7 +1108,7 @@ class Collection():
                 if self._engine.delete_doc(self.full_name, doc_id):
                     success_deletes.add(doc_id)
             self.__update_indicies_deletes(success_deletes, metadata)
-        return DeleteResult(len(success_deletes))
+        return DeleteResult({"n": len(success_deletes)}, acknowledged=True)
 
     @support_alert
     def count_documents(self, filter):
@@ -1177,14 +1182,14 @@ class Collection():
         return metadata
 
     @support_alert
-    def create_index(self, keys, background=False):
+    def create_index(self, keys, background=False, name=None):
         """
         Create a new index for the collection.
         Indexes can dramatically speed up queries that use its fields.
         Currently, only single key indicies are supported.
         Returns the name of the new index.
 
-        :param keys str|[(key, direction)]:
+        :param keys str|[(key, direction)]|SON:
         :param background bool:
         :rtype: str
         """
@@ -1194,22 +1199,30 @@ class Collection():
         self.__create()
 
         if isinstance(keys, str):
-            keys = [(keys, ASCENDING)]
-        if not isinstance(keys, list) or keys == []:
+            keys = SON([(keys, ASCENDING)])
+        try:
+            keys = SON(keys)
+        except (ValueError, TypeError, KeyError):
             raise MongitaError("Unsupported keys parameter format %r. "
                                "See the docs." % str(keys))
+        if len(keys) == 0:
+            raise MongitaError("Unsupported keys parameter, index definition "
+                               "must contains at least one field definition")
         if len(keys) > 1:
             raise MongitaNotImplementedError("Mongita does not support multi-key indexes yet")
-        for k, direction in keys:
+        for k, direction in keys.items():
             if not k or not isinstance(k, str):
                 raise MongitaError("Index keys must be strings %r" % str(k))
             if direction not in (ASCENDING, DESCENDING):
                 raise MongitaError("Index key direction must be either ASCENDING (1) "
                                    "or DESCENDING (-1). Not %r" % direction)
 
-        key_str, direction = keys[0]
+        key_str, direction = keys.popitem()
 
         idx_name = f'{key_str}_{direction}'
+        if name:
+            idx_name = name
+
         new_idx_doc = {
             '_id': idx_name,
             'key_str': key_str,
@@ -1244,11 +1257,6 @@ class Collection():
             index_or_name = f'{index_or_name[0][0]}_{index_or_name[0][1]}'
         if not isinstance(index_or_name, str):
             raise MongitaError("Unsupported index_or_name parameter format. See the docs.")
-        if re.match(r'^.*?_\-?1$', index_or_name):
-            key, direction = index_or_name.rsplit('_', 1)
-            direction = int(direction)
-        else:
-            index_or_name = index_or_name + '_1'
 
         with self._engine.lock:
             metadata = self.__get_metadata()
@@ -1270,3 +1278,67 @@ class Collection():
         for idx in metadata.get('indexes', {}).values():
             ret.append({idx['_id']: {'key': [(idx['key_str'], idx['direction'])]}})
         return ret
+
+    @support_alert
+    def create_indexes(self, indexes: Sequence[pymongo.operations.IndexModel]):
+        ret = []
+        for index in indexes:
+            ret.append(self.create_index(
+                keys=index.document.get("key"),
+                name=index.document.get("name"),
+                background=index.document.get("background", False)
+            ))
+
+        return ret
+
+    @support_alert
+    def drop_indexes(self):
+        metadata = self.__get_metadata()
+
+        for idx in [idx["_id"] for idx in metadata.get('indexes', {}).values()]:
+            self.drop_index(idx)
+
+    @support_alert
+    def drop(self):
+        self.database.drop_collection(self.name)
+
+    @support_alert
+    def find_one_and_update(self, filter, update, sort=None, upsert=False, return_document=ReturnDocument.BEFORE):
+        with self._engine.lock:
+            previous = self.find_one(filter, sort)
+            if not previous and not upsert:
+                return
+
+            res = self.update_one(filter, update, upsert)
+
+            if return_document == ReturnDocument.BEFORE:
+                return previous
+
+            if res.upserted_id:
+                return self.find_one({"_id": res.upserted_id})
+
+            return self.find_one({"_id": previous["_id"]})
+
+    @support_alert
+    def find_one_and_replace(self, filter, replacement, sort=None, upsert=False, return_document=ReturnDocument.BEFORE):
+        with self._engine.lock:
+            previous = self.find_one(filter, sort)
+            if not previous:
+                res = self.replace_one(filter, replacement, upsert=upsert)
+                return self.find_one({"_id": res.upserted_id})
+            else:
+                self.replace_one({"_id": previous["_id"]}, replacement, upsert)
+
+            if return_document == ReturnDocument.BEFORE:
+                return previous
+            return self.find_one({"_id": previous["_id"]})
+
+    @support_alert
+    def find_one_and_delete(self, filter, sort=None, upsert=False):
+        with self._engine.lock:
+            previous = self.find_one(filter, sort)
+            if not previous and not upsert:
+                return None
+            self.delete_one({"_id": previous["_id"]})
+
+            return previous
