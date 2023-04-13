@@ -77,8 +77,6 @@ def _validate_update(update):
     :param update dict:
     :rtype: None
     """
-    # TODO: prevent change of _id immutable field and throw something similar to mongo error 66
-    # Performing an update on the path '_id' would modify the immutable field '_id'
 
     if not isinstance(update, dict):
         raise MongitaError("The update parameter must be a dict, not %r" % type(update))
@@ -96,10 +94,8 @@ def _validate_update(update):
         if not isinstance(update_dict, dict):
             raise MongitaError("If present, the update operator must be a dict, "
                                "not %r" % type(update_dict))
-        _id = update_dict.get('_id')
-        if _id:
-            if not isinstance(_id, (str, bson.ObjectId)):
-                raise MongitaError("The update _id must be a bson ObjectId or a string")
+        if update_dict.get('_id'):
+            raise MongitaError("Performing an update on the path '_id' would modify the immutable field '_id'")
 
 
 def _validate_doc(doc):

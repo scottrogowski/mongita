@@ -15,6 +15,8 @@ import pytest
 from bson import ObjectId
 from pymongo import IndexModel, ReturnDocument
 
+from mongita.collection import _validate_update
+
 sys.path.append(os.getcwd().split('/tests')[0])
 
 import mongita
@@ -715,6 +717,15 @@ def test_filter_combos(client_class):
                                                 '$ne': .75}}) == 0
 
 
+def test_validate_update():
+    with pytest.raises(errors.MongitaNotImplementedError):
+        _validate_update({"$unset": {"foo": ""}})
+    with pytest.raises(errors.MongitaError, match=r"Performing an update on the path '_id' would modify the "
+                                                  r"immutable field '_id'"):
+        _validate_update({"$set": {"_id": "should_not_replace_immutable_id"}})
+    _validate_update({"$set": {"someone": "something"}})
+
+
 @pytest.mark.parametrize("client_class", CLIENTS)
 def test_update_one(client_class):
     client, coll, imr = setup_many(client_class)
@@ -779,13 +790,9 @@ def test_update_one(client_class):
     assert ur.raw_result.get("updatedExisting") == False
     assert not coll.count_documents({'name': 'Mngse'})
 
-    # corner case updating ids must be strings
-    coll.update_one({'name': 'fake'}, {'$set': {'_id': 'uniqlo'}})
-    coll.update_one({'name': 'fake'}, {'$set': {'_id': bson.ObjectId()}})
+    # Prevent _id to be updated
     with pytest.raises(errors.PyMongoError):
-        coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
-    with pytest.raises(errors.PyMongoError):
-        coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
+        coll.update_one({'name': 'fake'}, {'$set': {'_id': 'uniqlo'}})
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -830,13 +837,9 @@ def test_find_one_and_update(client_class):
     assert not coll.find_one_and_update({'name': 'fake'}, {'$set': {'name': 'Mngse'}})
     assert not coll.count_documents({'name': 'Mngse'})
 
-    # corner case updating ids must be strings
-    coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': 'uniqlo'}})
-    coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': bson.ObjectId()}})
+    # prevent _id to be updated
     with pytest.raises(errors.PyMongoError):
-        coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': 5}})
-    with pytest.raises(errors.PyMongoError):
-        coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': 5}})
+        coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': 'uniqlo'}})
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
