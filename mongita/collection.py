@@ -9,6 +9,7 @@ import bson
 import pymongo
 import sortedcontainers
 from bson import SON
+from pymongo import ReturnDocument
 
 from .cursor import Cursor, _validate_sort
 from .common import support_alert, ASCENDING, DESCENDING, MetaStorageObject
@@ -77,6 +78,9 @@ def _validate_update(update):
     :param update dict:
     :rtype: None
     """
+    # TODO: prevent change of _id immutable field and throw something similar to mongo error 66
+    # Performing an update on the path '_id' would modify the immutable field '_id'
+
     if not isinstance(update, dict):
         raise MongitaError("The update parameter must be a dict, not %r" % type(update))
     for k in update.keys():
@@ -1299,3 +1303,44 @@ class Collection():
     @support_alert
     def drop(self):
         self.database.drop_collection(self.name)
+
+    @support_alert
+    def find_one_and_update(self, filter, update, sort=None, upsert=False, return_document=ReturnDocument.BEFORE):
+        with self._engine.lock:
+            previous = self.find_one(filter, sort)
+            if not previous and not upsert:
+                return
+
+            res = self.update_one(filter, update, upsert)
+
+            if return_document == ReturnDocument.BEFORE:
+                return previous
+
+            if res.upserted_id:
+                return self.find_one({"_id": res.upserted_id})
+
+            return self.find_one({"_id": previous["_id"]})
+
+    @support_alert
+    def find_one_and_replace(self, filter, replacement, sort=None, upsert=False, return_document=ReturnDocument.BEFORE):
+        with self._engine.lock:
+            previous = self.find_one(filter, sort)
+            if not previous:
+                res = self.replace_one(filter, replacement, upsert=upsert)
+                return self.find_one({"_id": res.upserted_id})
+            else:
+                self.replace_one({"_id": previous["_id"]}, replacement, upsert)
+
+            if return_document == ReturnDocument.BEFORE:
+                return previous
+            return self.find_one({"_id": previous["_id"]})
+
+    @support_alert
+    def find_one_and_delete(self, filter, sort=None, upsert=False):
+        with self._engine.lock:
+            previous = self.find_one(filter, sort)
+            if not previous and not upsert:
+                return None
+            self.delete_one({"_id": previous["_id"]})
+
+            return previous

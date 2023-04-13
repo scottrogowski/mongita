@@ -13,7 +13,7 @@ import bson
 import pymongo
 import pytest
 from bson import ObjectId
-from pymongo import IndexModel
+from pymongo import IndexModel, ReturnDocument
 
 sys.path.append(os.getcwd().split('/tests')[0])
 
@@ -564,6 +564,51 @@ def test_replace_one(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
+def test_find_one_and_replace(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(TypeError):
+        coll.find_one_and_replace()
+    with pytest.raises(TypeError):
+        coll.find_one_and_replace({'_id': 'a'})
+
+    doc = coll.find_one({'name': TEST_DOCS[0]['name']})
+    assert doc['name'] == TEST_DOCS[0]['name']
+    assert '_id' not in TEST_DOCS[1]
+
+    doc = coll.find_one_and_replace({'_id': doc['_id']}, TEST_DOCS[1], )
+    assert '_id' not in TEST_DOCS[1]
+    assert isinstance(doc, dict)
+    assert doc["name"] == TEST_DOCS[0]["name"]
+    assert coll.count_documents({'name': 'Indian grey mongoose'}) == 2
+
+    doc = coll.find_one_and_replace({'name': 'Indian grey mongoose'}, TEST_DOCS[2], return_document=ReturnDocument.AFTER)
+    assert doc['name'] == TEST_DOCS[2]["name"]
+    assert coll.count_documents({'name': 'Indian grey mongoose'}) == 1
+    assert coll.count_documents({'name': 'Honey Badger'}) == 2
+
+    assert set(imr.inserted_ids) == set([d['_id'] for d in coll.find()])
+
+    doc = coll.find_one_and_replace({'name': 'Fake Mongoose'},
+                          {'name': 'Fake Mongoose', 'weight': 5},
+                          upsert=True)
+    assert doc["_id"] and isinstance(doc["_id"], bson.ObjectId)
+    assert coll.count_documents({'name': 'Fake Mongoose'}) == 1
+
+    # upsert an existing document
+    expected_doc_id = doc["_id"]
+    doc = coll.find_one_and_replace({'name': 'Fake Mongoose'}, {'name': 'Other mongoose'}, upsert=True, return_document=ReturnDocument.AFTER)
+    assert doc["name"] == "Other mongoose"
+    assert doc["_id"] == expected_doc_id
+
+    # upsert a non-existent document, with a provided ID
+    coll.find_one_and_replace({'_id': 'id_from_filter'}, {'key': 'value'}, upsert=True)
+    assert coll.count_documents({'_id': 'id_from_filter'}) == 1
+
+    # fail gracefully
+    assert not coll.find_one_and_replace({'name': 'not exists'}, {'kingdom': 'fake kingdom'})
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
 def test_filters(client_class):
     client, coll, imr = setup_many(client_class)
     with pytest.raises(errors.PyMongoError):
@@ -732,6 +777,57 @@ def test_update_one(client_class):
         coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
     with pytest.raises(errors.PyMongoError):
         coll.update_one({'name': 'fake'}, {'$set': {'_id': 5}})
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_find_one_and_update(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({}, {}, upsert=True)
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({}, {'name': 'Mongooose'})
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({}, ['name', 'Mongooose'])
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({}, {'$set': ['name', 'Mongooose']})
+    with pytest.raises(errors.MongitaNotImplementedError):
+        coll.find_one_and_update({}, {'$unset': ['name', '']})
+
+    assert coll.find_one_and_update({'name': 'Meercat'}, {'$set': {'name': 'Mongooose'}})
+    assert isinstance(imr.inserted_ids[0], bson.ObjectId)
+
+    pidgeotto = coll.find_one_and_update({'kingdom': 'bird'}, {'$set': {'name': 'Pidgeotto'}}, return_document=ReturnDocument.AFTER)
+    assert pidgeotto['name'] == 'Pidgeotto'
+
+    before = coll.find_one_and_update({'kingdom': 'bird'}, {'$set': {'kingdom': 'reptile'}})
+    assert before['kingdom'] == 'bird'
+
+    assert coll.find_one({'kingdom': 'bird'}) is None
+    assert coll.count_documents({'kingdom': 'reptile'}) == 2
+
+    pidgeotto2 = coll.find_one({'name': 'Pidgeotto'})
+    assert pidgeotto2.get('kingdom') == 'reptile'
+    assert pidgeotto2['_id'] == pidgeotto['_id']
+
+    tmp_doc_cnt = coll.count_documents({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}})
+    doc = coll.find_one_and_update({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}}, {'$set': {'kingdom': 'reptile'}})
+    assert doc["kingdom"] == "mammal"
+    assert coll.count_documents({'kingdom': 'reptile'}) == 3
+
+    mongoose_before_weight = coll.find_one_and_update({'name': 'Mongooose'}, {'$inc': {'weight': -1}})
+    mongoose = coll.find_one({'name': 'Mongooose'})
+    assert mongoose.get('weight') == mongoose_before_weight.get("weight") - 1
+
+    assert not coll.find_one_and_update({'name': 'fake'}, {'$set': {'name': 'Mngse'}})
+    assert not coll.count_documents({'name': 'Mngse'})
+
+    # corner case updating ids must be strings
+    coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': 'uniqlo'}})
+    coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': bson.ObjectId()}})
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': 5}})
+    with pytest.raises(errors.PyMongoError):
+        coll.find_one_and_update({'name': 'Mongooose'}, {'$set': {'_id': 5}})
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -940,6 +1036,25 @@ def test_delete_one(client_class):
     assert dor.deleted_count == 1
     dor = coll.delete_one({'_id': remaining_ids[-1]})
     assert dor.deleted_count == 0
+    assert coll.count_documents({}) == LEN_TEST_DOCS - 2
+
+    dor = coll.delete_one({'_id': 'never_existed'})
+    assert dor.deleted_count == 0
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
+def test_find_one_and_delete(client_class):
+    client, coll, imr = setup_many(client_class)
+    with pytest.raises(TypeError):
+        coll.find_one_and_delete()
+    doc = coll.find_one_and_delete({})
+    assert isinstance(doc, dict)
+
+    remaining_ids = [d['_id'] for d in coll.find({})]
+    assert len(remaining_ids) == len(TEST_DOCS) - 1
+    doc = coll.find_one_and_delete({'_id': remaining_ids[-1]})
+    assert doc["_id"] == remaining_ids[-1]
+    assert not coll.find_one_and_delete({'_id': remaining_ids[-1]})
     assert coll.count_documents({}) == LEN_TEST_DOCS - 2
 
     dor = coll.delete_one({'_id': 'never_existed'})
