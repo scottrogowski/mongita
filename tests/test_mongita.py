@@ -542,6 +542,7 @@ def test_replace_one(client_class):
     assert ur.matched_count == 0
     assert ur.modified_count == 1
     assert ur.upserted_id and isinstance(ur.upserted_id, bson.ObjectId)
+    assert ur.raw_result.get("updatedExisting") == False
     assert coll.count_documents({'name': 'Fake Mongoose'}) == 1
 
     # upsert an existing document
@@ -561,6 +562,7 @@ def test_replace_one(client_class):
     ur = coll.replace_one({'name': 'not exists'}, {'kingdom': 'fake kingdom'})
     assert ur.matched_count == 0
     assert ur.modified_count == 0
+    assert ur.raw_result.get("updatedExisting") == False
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -733,18 +735,22 @@ def test_update_one(client_class):
     assert ur.matched_count == 1
     assert ur.modified_count == 1
     assert ur.upserted_id is None
+    assert ur.raw_result.get("updatedExisting") == True
     assert coll.find_one({'name': 'Mongooose'})
     assert isinstance(imr.inserted_ids[0], bson.ObjectId)
 
     ur = coll.update_one({'kingdom': 'bird'}, {'$set': {'name': 'Pidgeotto'}})
     assert ur.matched_count == 1
     assert ur.modified_count == 1
+    assert ur.raw_result.get("updatedExisting") == True
+
     pidgeotto = coll.find_one({'kingdom': 'bird'})
     assert pidgeotto['name'] == 'Pidgeotto'
 
     ur = coll.update_one({'kingdom': 'bird'}, {'$set': {'kingdom': 'reptile'}})
     assert ur.matched_count == 1
     assert ur.modified_count == 1
+    assert ur.raw_result.get("updatedExisting") == True
     assert coll.find_one({'kingdom': 'bird'}) is None
     assert coll.count_documents({'kingdom': 'reptile'}) == 2
     pidgeotto2 = coll.find_one({'name': 'Pidgeotto'})
@@ -755,6 +761,7 @@ def test_update_one(client_class):
     ur = coll.update_one({'kingdom': 'mammal', 'name': {'$ne': 'Mongooose'}}, {'$set': {'kingdom': 'reptile'}})
     assert ur.matched_count == tmp_doc_cnt
     assert ur.modified_count == 1
+    assert ur.raw_result.get("updatedExisting") == True
     assert coll.count_documents({'kingdom': 'reptile'}) == 3
 
     mongoose = coll.find_one({'name': 'Mongooose'})
@@ -762,12 +769,14 @@ def test_update_one(client_class):
     ur = coll.update_one({'name': 'Mongooose'}, {'$inc': {'weight': -1}})
     assert ur.matched_count == 1
     assert ur.modified_count == 1
+    assert ur.raw_result.get("updatedExisting") == True
     mongoose = coll.find_one({'name': 'Mongooose'})
     assert mongoose.get('weight') == mongoose_before_weight - 1
 
     ur = coll.update_one({'name': 'fake'}, {'$set': {'name': 'Mngse'}})
     assert ur.matched_count == 0
     assert ur.modified_count == 0
+    assert ur.raw_result.get("updatedExisting") == False
     assert not coll.count_documents({'name': 'Mngse'})
 
     # corner case updating ids must be strings
@@ -842,6 +851,7 @@ def test_update_many(client_class):
     assert ur.matched_count == LEN_TEST_DOCS
     assert ur.modified_count == LEN_TEST_DOCS
     assert ur.upserted_id is None
+    assert ur.raw_result.get("updatedExisting") == True
 
     assert coll.distinct('name') == ['Mongooose']
     assert set(d['name'] for d in coll.find({})) == {'Mongooose'}
@@ -851,6 +861,7 @@ def test_update_many(client_class):
                           {'$set': {'kingdom': 'mammal'}})
     assert ur.matched_count == 3
     assert ur.modified_count == 3
+    assert ur.raw_result.get("updatedExisting") == True
     assert coll.distinct('kingdom') == ['mammal']
 
     ur = coll.update_many({'weight': {'$lt': 4}},
@@ -1030,6 +1041,8 @@ def test_delete_one(client_class):
     assert isinstance(dor, results.DeleteResult)
     assert isinstance(repr(dor), str)
     assert dor.deleted_count == 1
+    assert dor.raw_result.get("n") == 1
+
     remaining_ids = [d['_id'] for d in coll.find({})]
     assert len(remaining_ids) == len(TEST_DOCS) - 1
     dor = coll.delete_one({'_id': remaining_ids[-1]})
@@ -1040,6 +1053,7 @@ def test_delete_one(client_class):
 
     dor = coll.delete_one({'_id': 'never_existed'})
     assert dor.deleted_count == 0
+    assert dor.raw_result.get("n") == 0
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
@@ -1069,6 +1083,7 @@ def test_delete_many(client_class):
     dor = coll.delete_many({})
     assert isinstance(dor, results.DeleteResult)
     assert dor.deleted_count == LEN_TEST_DOCS
+    assert dor.raw_result.get("n") == LEN_TEST_DOCS
     assert coll.find_one({'_id': imr.inserted_ids[0]}) is None
     assert coll.find_one() is None
     assert coll.count_documents({}) == 0
@@ -1581,6 +1596,7 @@ def test_indicies_flow(client_class):
     ur = coll.update_many({'weight': {'$lt': 3}}, {'$set': {'weight': 5}})
     assert ur.matched_count == weight_lt_3
     assert ur.modified_count == weight_lt_3
+    assert ur.raw_result.get("updatedExisting") == True
 
     assert coll.count_documents({'weight': {'$lt': 3}}) == 0
     assert coll.count_documents({'weight': {'$gte': 3}}) == LEN_TEST_DOCS - 2
@@ -2169,6 +2185,7 @@ def test_defrag():
     client = _MongitaClientDisk()
     ur = client.db.coll.update_many({'val': {'$gt': .5}}, {'$set': {'attrs': {}, 'spotted': None}})
     assert ur.modified_count == len([d for d in TEST_DOCS if d.get('val') and d['val'] > .5]) * 100
+    assert ur.raw_result.get("updatedExisting") == True
     fh = client.engine._get_coll_fh('db.coll')
     fh.seek(0, 2)
     assert fh.tell() < pos
