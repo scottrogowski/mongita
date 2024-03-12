@@ -924,7 +924,7 @@ class Collection():
                 if i == limit:
                     return
 
-    def __find(self, filter, sort=None, limit=None, skip=None, metadata=None, shallow=False):
+    def __find(self, filter, sort=None, limit=None, skip=None, metadata=None, shallow=True):
         """
         Given a filter, find all docs that match this filter.
         This method returns a generator.
@@ -934,6 +934,7 @@ class Collection():
         :param limit int|None:
         :param skip int|None:
         :param metadata dict|None:
+        :param shallow bool|True:
         :rtype: Generator(list[dict])
         """
         gen = self.__find_ids(filter, sort, limit, skip, metadata=metadata)
