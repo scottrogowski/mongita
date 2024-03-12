@@ -726,7 +726,9 @@ class Collection():
         :rtype: results.InsertOneResult
         """
         _validate_doc(document)
-        document = copy.deepcopy(document)
+        # We're only changing a top-level property, so no need to deepcopy.
+        #document = copy.deepcopy(document)
+        document = document.copy()
         document['_id'] = document.get('_id') or bson.ObjectId()
         self.__create()
         with self._engine.lock:
@@ -750,7 +752,9 @@ class Collection():
         ready_docs = []
         for doc in documents:
             _validate_doc(doc)
-            doc = copy.deepcopy(doc)
+            # We're only changing a top-level property, so no need to deepcopy.
+            #doc = copy.deepcopy(doc)
+            doc = doc.copy()
             doc['_id'] = doc.get('_id') or bson.ObjectId()
             ready_docs.append(doc)
         self.__create()
@@ -920,7 +924,7 @@ class Collection():
                 if i == limit:
                     return
 
-    def __find(self, filter, sort=None, limit=None, skip=None, metadata=None, shallow=False):
+    def __find(self, filter, sort=None, limit=None, skip=None, metadata=None, shallow=True):
         """
         Given a filter, find all docs that match this filter.
         This method returns a generator.
@@ -930,6 +934,7 @@ class Collection():
         :param limit int|None:
         :param skip int|None:
         :param metadata dict|None:
+        :param shallow bool|True:
         :rtype: Generator(list[dict])
         """
         gen = self.__find_ids(filter, sort, limit, skip, metadata=metadata)
