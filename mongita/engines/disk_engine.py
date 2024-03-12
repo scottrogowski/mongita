@@ -319,7 +319,7 @@ class DiskEngine(Engine):
             os.makedirs(full_loc)
 
     def close(self):
-        self._cache = self._cache = Cache(engine = self)
+        self._cache = Cache(engine = self)
         self._metadata = {}
         self._file_attrs = {}
         for fh in self._collection_fhs.values():
