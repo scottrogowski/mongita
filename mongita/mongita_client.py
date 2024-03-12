@@ -143,12 +143,12 @@ class MongitaClientDisk(MongitaClient):
     The MongoClientDisk persists its state on the disk. It is meant to be
     compatible in most ways with pymongo's MongoClient.
     """
-    def __init__(self, host=DEFAULT_STORAGE_DIR, **kwargs):
+    def __init__(self, host=DEFAULT_STORAGE_DIR, cache_size=None, **kwargs):
         host = host or DEFAULT_STORAGE_DIR
         if isinstance(host, list):
             # fix for mongoengine passing a list to us
             host = host[0]
-        self.engine = disk_engine.DiskEngine.create(host)
+        self.engine = disk_engine.DiskEngine.create(host, cache_size = cache_size)
         self.is_primary = True
         super().__init__()
 
