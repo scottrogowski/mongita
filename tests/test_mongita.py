@@ -1044,6 +1044,77 @@ def test_nested(client_class):
 
 
 @pytest.mark.parametrize("client_class", CLIENTS)
+def test_nested_array_queries(client_class):
+    """Test queries on nested array elements (issue #44)"""
+    remove_test_dir()
+    client = client_class()
+    coll = client.db.test_nested_arrays
+    
+    # Insert test data with arrays of objects
+    test_data = [
+        {
+            "doc_id": 1,
+            "results": [
+                {"product": "abc", "score": 10},
+                {"product": "xyz", "score": 5}
+            ]
+        },
+        {
+            "doc_id": 2,
+            "results": [
+                {"product": "abc", "score": 8},
+                {"product": "xyz", "score": 7}
+            ]
+        },
+        {
+            "doc_id": 3,
+            "results": [
+                {"product": "def", "score": 12},
+                {"product": "ghi", "score": 3}
+            ]
+        }
+    ]
+    
+    coll.insert_many(test_data)
+    
+    # Test basic equality queries on nested array elements
+    results = list(coll.find({"results.product": "xyz"}))
+    assert len(results) == 2
+    assert set(r["doc_id"] for r in results) == {1, 2}
+    
+    results = list(coll.find({"results.product": "def"}))
+    assert len(results) == 1
+    assert results[0]["doc_id"] == 3
+    
+    # Test $in operator with nested array elements
+    results = list(coll.find({"results.product": {"$in": ["abc", "def"]}}))
+    assert len(results) == 3
+    assert set(r["doc_id"] for r in results) == {1, 2, 3}
+    
+    # Test $nin operator with nested array elements
+    results = list(coll.find({"results.product": {"$nin": ["xyz"]}}))
+    assert len(results) == 1
+    assert results[0]["doc_id"] == 3
+    
+    # Test numeric comparison operators with nested array elements
+    results = list(coll.find({"results.score": {"$gt": 8}}))
+    assert len(results) == 2
+    assert set(r["doc_id"] for r in results) == {1, 3}
+    
+    results = list(coll.find({"results.score": {"$lte": 7}}))
+    assert len(results) == 3
+    assert set(r["doc_id"] for r in results) == {1, 2, 3}
+    
+    # Test combined conditions
+    results = list(coll.find({
+        "results.product": "abc",
+        "results.score": {"$gte": 8}
+    }))
+    assert len(results) == 2
+    assert set(r["doc_id"] for r in results) == {1, 2}
+
+
+@pytest.mark.parametrize("client_class", CLIENTS)
 def test_basic_validation(client_class):
     client, coll, imr = setup_many(client_class)
 
