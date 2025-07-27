@@ -147,10 +147,16 @@ def _doc_matches_agg(doc_v, query_ops):
     if any(k.startswith('$') for k in query_ops.keys()):
         for query_op, query_val in query_ops.items():
             if query_op == '$eq':
-                if doc_v != query_val:
+                if isinstance(doc_v, list):
+                    if query_val not in doc_v:
+                        return False
+                elif doc_v != query_val:
                     return False
             elif query_op == '$ne':
-                if doc_v == query_val:
+                if isinstance(doc_v, list):
+                    if query_val in doc_v:
+                        return False
+                elif doc_v == query_val:
                     return False
             elif query_op == '$in':
                 if not isinstance(query_val, (list, tuple, set)):
@@ -166,32 +172,51 @@ def _doc_matches_agg(doc_v, query_ops):
                     return False
             elif query_op == '$lt':
                 try:
-                    if doc_v >= query_val:
+                    if isinstance(doc_v, list):
+                        if not any(item < query_val for item in doc_v 
+                                  if isinstance(item, (int, float, str))):
+                            return False
+                    elif doc_v >= query_val:
                         return False
                 except TypeError:
                     return False
             elif query_op == '$lte':
                 try:
-                    if doc_v > query_val:
+                    if isinstance(doc_v, list):
+                        if not any(item <= query_val for item in doc_v 
+                                  if isinstance(item, (int, float, str))):
+                            return False
+                    elif doc_v > query_val:
                         return False
                 except TypeError:
                     return False
             elif query_op == '$gt':
                 try:
-                    if doc_v <= query_val:
+                    if isinstance(doc_v, list):
+                        if not any(item > query_val for item in doc_v 
+                                  if isinstance(item, (int, float, str))):
+                            return False
+                    elif doc_v <= query_val:
                         return False
                 except TypeError:
                     return False
             elif query_op == '$gte':
                 try:
-                    if doc_v < query_val:
+                    if isinstance(doc_v, list):
+                        if not any(item >= query_val for item in doc_v 
+                                  if isinstance(item, (int, float, str))):
+                            return False
+                    elif doc_v < query_val:
                         return False
                 except TypeError:
                     return False
             # agg_k check is in _validate_filter
         return True
     else:
-        return doc_v == query_ops
+        if isinstance(doc_v, list):
+            return query_ops in doc_v
+        else:
+            return doc_v == query_ops
 
 
 def _doc_matches_slow_filters(doc, slow_filters):
@@ -454,19 +479,35 @@ def _get_item_from_doc(doc, key):
     doc = {'deep': {'nested': {'list': ['a', 'b', 'c']}}}
     key = 'deep.nested.list.1'
     -> 'b'
+    
+    For array queries like 'results.product' where results is an array of objects,
+    returns a list of values found in the array elements.
 
     :param doc dict:
     :param key str:
-    :rtype: value
+    :rtype: value or list of values
     """
     if '.' in key:
         item = doc
-        for level in key.split('.'):
+        key_parts = key.split('.')
+        for i, level in enumerate(key_parts):
             if isinstance(item, list):
                 try:
                     level_int = int(level)
                 except ValueError:
-                    return None
+                    # level is not numeric, so we need to search array elements
+                    # for the remaining path
+                    remaining_path = '.'.join(key_parts[i:])
+                    results = []
+                    for array_item in item:
+                        if isinstance(array_item, dict):
+                            nested_result = _get_item_from_doc(array_item, remaining_path)
+                            if nested_result is not None:
+                                if isinstance(nested_result, list):
+                                    results.extend(nested_result)
+                                else:
+                                    results.append(nested_result)
+                    return results if results else None
                 try:
                     item = item[level_int]
                 except IndexError:
